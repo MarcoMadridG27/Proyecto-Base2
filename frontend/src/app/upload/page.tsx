@@ -43,53 +43,48 @@ export default function Page() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const handleFile = useCallback((file: File) => {
-    if (!file.name.toLowerCase().endsWith('.csv')) {
-      toast.error('Por favor selecciona un archivo CSV válido');
-      return;
-    }
+const handleFile = useCallback(async (file: File) => {
+  if (!file.name.toLowerCase().endsWith(".csv")) {
+    toast.error("Por favor selecciona un archivo CSV válido");
+    return;
+  }
 
-    setIsLoading(true);
-    setUploadProgress(0);
+  setIsLoading(true);
+  setUploadProgress(0);
 
-    // Simulate upload progress
-    const progressInterval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 90) {
-          clearInterval(progressInterval);
-          return 90;
-        }
-        return prev + 10;
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch("http://localhost:8000/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.ok) {
+      setCsvData({
+        headers: data.headers,
+        rows: data.rows,
+        fileName: data.fileName,
+        fileSize: data.fileSize,
+        recordCount: data.recordCount,
       });
-    }, 100);
+      setUploadProgress(100);
+      toast.success(`Archivo ${file.name} cargado exitosamente`);
+    } else {
+      throw new Error(data.error || "Error al procesar CSV en backend");
+    }
+  } catch (error) {
+    console.error(error);
+    setUploadProgress(0);
+    toast.error("Error al subir archivo al backend");
+  } finally {
+    setIsLoading(false);
+  }
+}, []);
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target?.result as string;
-        const { headers, rows } = parseCSV(text);
-        
-        setTimeout(() => {
-          setUploadProgress(100);
-          setCsvData({
-            headers,
-            rows,
-            fileName: file.name,
-            fileSize: formatFileSize(file.size),
-            recordCount: rows.length
-          });
-          setIsLoading(false);
-          toast.success(`Archivo ${file.name} cargado exitosamente`);
-        }, 500);
-      } catch (error) {
-        setIsLoading(false);
-        setUploadProgress(0);
-        toast.error('Error al procesar el archivo CSV');
-        clearInterval(progressInterval);
-      }
-    };
-    reader.readAsText(file);
-  }, []);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();

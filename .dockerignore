@@ -1,0 +1,16 @@
+# Ignorar dependencias y cachés
+node_modules
+.next
+dist
+build
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+.env
+.git
+.gitignore
+Dockerfile
+docker-compose.yml

@@ -1,14 +1,42 @@
 "use client";
 import React, { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/app/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Textarea } from "@/app/components/ui/textarea";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/app/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/app/components/ui/table";
 import { Badge } from "@/app/components/ui/badge";
 import { Alert, AlertDescription } from "@/app/components/ui/alert";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/app/components/ui/select";
 
-import { Play, History, Save, Download, Database, Clock, CheckCircle, AlertTriangle } from "lucide-react";
+import {
+  Play,
+  History,
+  Save,
+  Download,
+  Database,
+  Clock,
+  CheckCircle,
+  AlertTriangle,
+} from "lucide-react";
 import { toast } from "sonner";
 
 interface QueryResult {
@@ -23,34 +51,29 @@ interface QueryHistory {
   query: string;
   timestamp: Date;
   executionTime: number;
-  status: 'success' | 'error';
+  status: "success" | "error";
 }
 
 export default function Page() {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [result, setResult] = useState<QueryResult | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queryHistory, setQueryHistory] = useState<QueryHistory[]>([]);
-  const [selectedTable, setSelectedTable] = useState<string>('');
+  const [selectedTable, setSelectedTable] = useState<string>("");
 
   const sampleQueries = [
-    'SELECT * FROM usuarios WHERE edad > 25',
-    'SELECT ciudad, COUNT(*) as total FROM usuarios GROUP BY ciudad',
-    'SELECT * FROM usuarios WHERE latitud BETWEEN -15 AND -10',
-    'SELECT nombre, edad FROM usuarios ORDER BY edad DESC LIMIT 5'
+    "SELECT * FROM usuarios WHERE edad > 25",
+    "SELECT ciudad, COUNT(*) as total FROM usuarios GROUP BY ciudad",
+    "SELECT * FROM usuarios WHERE latitud BETWEEN -15 AND -10",
+    "SELECT nombre, edad FROM usuarios ORDER BY edad DESC LIMIT 5",
   ];
 
-  const availableTables = [
-    'usuarios',
-    'productos',
-    'ventas',
-    'ubicaciones'
-  ];
+  const availableTables = ["usuarios", "productos", "ventas", "ubicaciones"];
 
   const executeQuery = async () => {
     if (!query.trim()) {
-      toast.error('Por favor ingresa una consulta');
+      toast.error("Por favor ingresa una consulta");
       return;
     }
 
@@ -59,74 +82,49 @@ export default function Page() {
     const startTime = Date.now();
 
     try {
-      // Simulate query execution
-      await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
-      
-      // Mock result based on query type
-      let mockResult: QueryResult;
-      
-      if (query.toLowerCase().includes('count')) {
-        mockResult = {
-          headers: ['ciudad', 'total'],
-          rows: [
-            ['Lima', '120'],
-            ['Arequipa', '85'],
-            ['Cusco', '67'],
-            ['Trujillo', '92']
-          ],
-          executionTime: Date.now() - startTime,
-          rowCount: 4
-        };
-      } else if (query.toLowerCase().includes('group by')) {
-        mockResult = {
-          headers: ['categoria', 'promedio_edad'],
-          rows: [
-            ['Empleados', '28.5'],
-            ['Estudiantes', '22.3'],
-            ['Profesionales', '34.2']
-          ],
-          executionTime: Date.now() - startTime,
-          rowCount: 3
-        };
-      } else {
-        mockResult = {
-          headers: ['id', 'nombre', 'edad', 'ciudad', 'latitud', 'longitud'],
-          rows: [
-            ['1', 'Juan Pérez', '25', 'Lima', '-12.0464', '-77.0428'],
-            ['2', 'María García', '30', 'Arequipa', '-16.4090', '-71.5375'],
-            ['3', 'Carlos López', '28', 'Cusco', '-13.5319', '-71.9675'],
-            ['4', 'Ana Rodríguez', '32', 'Trujillo', '-8.1116', '-79.0290'],
-            ['5', 'Luis Fernández', '27', 'Chiclayo', '-6.7714', '-79.8391']
-          ],
-          executionTime: Date.now() - startTime,
-          rowCount: 5
-        };
-      }
+      const res = await fetch("http://localhost:8000/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+      });
 
-      setResult(mockResult);
-      
-      // Add to history
-      const historyEntry: QueryHistory = {
-        id: Date.now().toString(),
-        query,
-        timestamp: new Date(),
-        executionTime: mockResult.executionTime,
-        status: 'success'
-      };
-      setQueryHistory(prev => [historyEntry, ...prev.slice(0, 9)]);
-      
-      toast.success(`Consulta ejecutada en ${mockResult.executionTime}ms`);
-    } catch (err) {
+      const data = await res.json();
+
+      if (res.ok && data.ok) {
+        const queryResult: QueryResult = {
+          headers: data.result.headers || [],
+          rows: data.result.rows || [],
+          executionTime: Date.now() - startTime,
+          rowCount: data.result.rows ? data.result.rows.length : 0,
+        };
+
+        setResult(queryResult);
+
+        // Historial
+        const historyEntry: QueryHistory = {
+          id: Date.now().toString(),
+          query,
+          timestamp: new Date(),
+          executionTime: queryResult.executionTime,
+          status: "success",
+        };
+        setQueryHistory((prev) => [historyEntry, ...prev.slice(0, 9)]);
+
+        toast.success(`Consulta ejecutada en ${queryResult.executionTime}ms`);
+      } else {
+        throw new Error(data.error || "Error al ejecutar la consulta");
+      }
+    } catch (err: any) {
       const errorEntry: QueryHistory = {
         id: Date.now().toString(),
         query,
         timestamp: new Date(),
         executionTime: Date.now() - startTime,
-        status: 'error'
+        status: "error",
       };
-      setQueryHistory(prev => [errorEntry, ...prev.slice(0, 9)]);
-      setError('Error en la sintaxis de la consulta');
-      toast.error('Error al ejecutar la consulta');
+      setQueryHistory((prev) => [errorEntry, ...prev.slice(0, 9)]);
+      setError(err.message || "Error desconocido");
+      toast.error("Error al ejecutar la consulta");
     } finally {
       setIsExecuting(false);
     }
@@ -134,47 +132,51 @@ export default function Page() {
 
   const loadSampleQuery = (sampleQuery: string) => {
     setQuery(sampleQuery);
-    toast.success('Consulta de ejemplo cargada');
+    toast.success("Consulta de ejemplo cargada");
   };
 
   const loadFromHistory = (historyQuery: string) => {
     setQuery(historyQuery);
-    toast.success('Consulta cargada desde el historial');
+    toast.success("Consulta cargada desde el historial");
   };
 
   const saveQuery = () => {
     if (!query.trim()) {
-      toast.error('No hay consulta para guardar');
+      toast.error("No hay consulta para guardar");
       return;
     }
-    
-    // Simulate saving to local storage or backend
-    localStorage.setItem('saved_query', query);
-    toast.success('Consulta guardada exitosamente');
+
+    localStorage.setItem("saved_query", query);
+    toast.success("Consulta guardada exitosamente");
   };
 
   const exportResults = () => {
     if (!result) {
-      toast.error('No hay resultados para exportar');
+      toast.error("No hay resultados para exportar");
       return;
     }
 
-    const csvContent = [result.headers.join(','), ...result.rows.map(row => row.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const csvContent = [
+      result.headers.join(","),
+      ...result.rows.map((row) => row.join(",")),
+    ].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'query_results.csv';
+    a.download = "query_results.csv";
     a.click();
     window.URL.revokeObjectURL(url);
-    toast.success('Resultados exportados');
+    toast.success("Resultados exportados");
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Consultas SQL-like</h2>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Consultas SQL-like
+          </h2>
           <p className="text-gray-600 dark:text-gray-400">
             Ejecuta consultas personalizadas sobre tus datos
           </p>
@@ -230,17 +232,17 @@ export default function Page() {
                 className="min-h-[200px] font-mono text-sm"
                 disabled={isExecuting}
               />
-              
+
               <div className="flex items-center gap-2">
-                <Button 
-                  onClick={executeQuery} 
+                <Button
+                  onClick={executeQuery}
                   disabled={isExecuting || !query.trim()}
                   className="bg-gradient-to-r from-blue-500 to-emerald-500 hover:from-blue-600 hover:to-emerald-600"
                 >
                   <Play className="w-4 h-4 mr-2" />
-                  {isExecuting ? 'Ejecutando...' : 'Ejecutar Consulta'}
+                  {isExecuting ? "Ejecutando..." : "Ejecutar Consulta"}
                 </Button>
-                
+
                 <Badge variant="secondary" className="ml-auto">
                   {query.length} caracteres
                 </Badge>
@@ -348,7 +350,7 @@ export default function Page() {
                       onClick={() => loadFromHistory(item.query)}
                     >
                       <div className="flex items-center gap-2 mb-1">
-                        {item.status === 'success' ? (
+                        {item.status === "success" ? (
                           <CheckCircle className="w-4 h-4 text-emerald-500" />
                         ) : (
                           <AlertTriangle className="w-4 h-4 text-red-500" />

@@ -16,12 +16,43 @@ class SQLParser:
             raise ValueError("Sentencia SQL no soportada")
 
     def _parse_create(self, tokens):
-        # CREATE TABLE <name> FROM FILE "x.csv" USING INDEX isam("id")
+        """
+        CREATE TABLE Restaurantes (
+            id INT INDEX isam,
+            nombre VARCHAR[20] INDEX btree,
+            fecha DATE
+        )
+        """
         table = tokens[2]
+        # Extraer definición de columnas entre paréntesis
+        if "(" in tokens and ")" in tokens:
+            open_paren = tokens.index("(")
+            close_paren = len(tokens) - 1 - tokens[::-1].index(")")
+            cols_tokens = tokens[open_paren+1:close_paren]
+        else:
+            raise ValueError("CREATE TABLE debe definir columnas")
+
+        # Parsear columnas
+        columns, index_map = [], {}
+        i = 0
+        while i < len(cols_tokens):
+            name = cols_tokens[i]
+            ctype = cols_tokens[i+1]
+            col_def = {"name": name, "type": ctype.upper()}
+            i += 2
+            if i < len(cols_tokens) and cols_tokens[i] == "index":
+                idx_type = cols_tokens[i+1]
+                index_map[name] = idx_type
+                i += 2
+            columns.append(col_def)
+            if i < len(cols_tokens) and cols_tokens[i] == ",":
+                i += 1  # saltar coma
+
         return {
             "operation": "create",
             "table": table,
-            "details": tokens[3:]
+            "columns": columns,
+            "index_map": index_map
         }
 
     def _parse_insert(self, tokens):
@@ -48,23 +79,43 @@ class SQLParser:
         }
 
     def _parse_select(self, tokens):
-        # SELECT col FROM table WHERE cond
+        # SELECT col FROM table WHERE cond [USING <index>]
         from_index = tokens.index("from")
         columns = tokens[1:from_index]
         table = tokens[from_index+1]
+
+        condition, index = None, None
         if "where" in tokens:
             where_index = tokens.index("where")
-            condition = tokens[where_index+1:]
-        else:
-            condition = None
+            condition = " ".join(tokens[where_index+1:])
+
+        if "using" in tokens:
+            idx_index = tokens.index("using")
+            index = tokens[idx_index+1]
+
         return {
             "operation": "select",
             "table": table,
             "columns": columns,
-            "condition": " ".join(condition) if condition else None
+            "condition": condition,
+            "index": index
         }
+
 
 if __name__ == "__main__":
     parser = SQLParser()
-    q1 = "SELECT * FROM Restaurantes WHERE id = 10"
+
+    q1 = """
+    CREATE TABLE Restaurantes (
+        id int index isam,
+        nombre varchar[20] index btree,
+        fecha date
+    )
+    """
     print(parser.parse(q1))
+
+    q2 = "INSERT INTO Restaurantes VALUES (1, 'KFC', '2023-01-01')"
+    print(parser.parse(q2))
+
+    q3 = "SELECT * FROM Restaurantes WHERE id = 10 USING btree"
+    print(parser.parse(q3))

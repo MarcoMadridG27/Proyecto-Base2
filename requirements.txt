@@ -1,0 +1,20 @@
+# === Parser ===
+pyparsing==3.1.2        # opcional, si usas parser basado en pyparsing
+
+# === Core (estructuras e índices) ===
+numpy==1.26.4           # útil para cálculos, RTree simple o métricas
+rtree==1.3.0            # binding de libspatialindex, para RTree real
+pandas==2.2.2           # para cargar CSV en pruebas
+# === API Backend ===
+fastapi==0.115.0
+uvicorn[standard]==0.30.3
+# === Frontend ===
+tk==0.1.0               # si usas Tkinter (normalmente ya viene con Python)
+PyQt5==5.15.11          # si prefieres Qt (opcional)
+
+# === Utilidades ===
+matplotlib==3.9.2       # para gráficos comparativos en el informe
+pytest==8.2.0           # framework de testing
+
+python-multipart
+pydantic

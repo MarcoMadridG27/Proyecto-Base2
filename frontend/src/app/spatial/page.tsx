@@ -91,35 +91,52 @@ export default function Page() {
       data: { poblacion: 29984, area: '3.33 km²' }
     }
   ];
+const executeSearch = async () => {
+  setIsSearching(true);
+  setSearchResults([]);
+  try {
+    const res = await fetch("http://localhost:8000/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: `SELECT * FROM ubicaciones WHERE ST_Within(geom, ${searchArea.type.toUpperCase()}(${searchArea.centerLat}, ${searchArea.centerLng}, ${searchArea.radius}))`,
+      }),
+    });
 
-  const executeSearch = () => {
-    setIsSearching(true);
-    
-    setTimeout(() => {
-      // Simulate R-Tree spatial search
-      const results = spatialData.filter(point => {
-        const distance = calculateDistance(
-          searchArea.centerLat,
-          searchArea.centerLng,
-          point.lat,
-          point.lng
-        );
-        
-        if (searchArea.type === 'circle') {
-          return distance <= searchArea.radius;
-        } else {
-          // Rectangle search (simplified)
-          const latDiff = Math.abs(point.lat - searchArea.centerLat);
-          const lngDiff = Math.abs(point.lng - searchArea.centerLng);
-          return latDiff <= searchArea.radius / 111 && lngDiff <= searchArea.radius / 111;
-        }
-      });
-      
-      setSearchResults(results);
-      setIsSearching(false);
-      toast.success(`Encontrados ${results.length} puntos en el área de búsqueda`);
-    }, 1000);
-  };
+    const data = await res.json();
+
+    if (res.ok && data.ok) {
+      // Se asume que tu backend devuelve rows con [id, name, lat, lng, category, ...]
+      const parsedResults: SpatialPoint[] = data.result.rows.map(
+        (row: any[], idx: number) => ({
+          id: row[0] || idx.toString(),
+          name: row[1] || "Sin nombre",
+          lat: parseFloat(row[2]),
+          lng: parseFloat(row[3]),
+          category: row[4] || "Otro",
+          data: row.slice(5).reduce(
+            (acc: any, val: any, i: number) => ({
+              ...acc,
+              [`extra_${i}`]: val,
+            }),
+            {}
+          ),
+        })
+      );
+
+      setSearchResults(parsedResults);
+      toast.success(`Encontrados ${parsedResults.length} puntos en el área`);
+    } else {
+      throw new Error(data.error || "Error en la búsqueda espacial");
+    }
+  } catch (err) {
+    console.error(err);
+    toast.error("Error de conexión con backend");
+  } finally {
+    setIsSearching(false);
+  }
+};
+
 
   const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
     const R = 6371; // Earth's radius in km

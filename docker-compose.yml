@@ -1,0 +1,26 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile   # Usa el Dockerfile que ya hicimos
+    container_name: mini-db-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data       # Persistencia de CSVs en tu carpeta local
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend      # ruta a tu app de Next.js
+      dockerfile: Dockerfile   # debes crear un Dockerfile para frontend
+    container_name: mini-db-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+    restart: always
