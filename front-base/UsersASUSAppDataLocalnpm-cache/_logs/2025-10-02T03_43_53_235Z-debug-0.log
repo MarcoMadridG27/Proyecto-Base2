@@ -1,0 +1,346 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Users\ASUS\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.6.1
+2 info using node@v20.17.0
+3 silly config load:file:C:\Users\ASUS\AppData\Roaming\npm\node_modules\npm\npmrc
+4 silly config load:file:C:\Users\ASUS\front-base\.npmrc
+5 silly config load:file:C:\Users\ASUS\.npmrc
+6 silly config load:file:C:\Users\ASUS\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm install geist
+8 verbose argv "install" "geist"
+9 verbose logfile logs-max:10 dir:C:\Users\ASUS\front-base\UsersASUSAppDataLocalnpm-cache\_logs\2025-10-02T03_43_53_235Z-
+10 verbose logfile C:\Users\ASUS\front-base\UsersASUSAppDataLocalnpm-cache\_logs\2025-10-02T03_43_53_235Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+13 silly idealTree buildDeps
+14 silly fetch manifest geist@^1.3.1
+15 silly packumentCache full:https://registry.npmjs.org/geist cache-miss
+16 http cache https://registry.npmjs.org/geist 41ms (cache hit)
+17 silly packumentCache full:https://registry.npmjs.org/geist set size:140041 disposed:false
+18 silly fetch manifest next@14.2.16
+19 silly packumentCache full:https://registry.npmjs.org/next cache-miss
+20 http cache https://registry.npmjs.org/next 55ms (cache hit)
+21 silly packumentCache full:https://registry.npmjs.org/next set size:26750809 disposed:false
+22 silly fetch manifest @opentelemetry/api@^1.1.0
+23 silly packumentCache full:https://registry.npmjs.org/@opentelemetry%2fapi cache-miss
+24 http cache https://registry.npmjs.org/@opentelemetry%2fapi 8ms (cache hit)
+25 silly packumentCache full:https://registry.npmjs.org/@opentelemetry%2fapi set size:455567 disposed:false
+26 silly fetch manifest @playwright/test@^1.41.2
+27 silly packumentCache full:https://registry.npmjs.org/@playwright%2ftest cache-miss
+28 http cache https://registry.npmjs.org/@playwright%2ftest 19ms (cache hit)
+29 silly packumentCache full:https://registry.npmjs.org/@playwright%2ftest set size:8297421 disposed:false
+30 silly fetch manifest react@^18
+31 silly packumentCache full:https://registry.npmjs.org/react cache-miss
+32 http cache https://registry.npmjs.org/react 17ms (cache hit)
+33 silly packumentCache full:https://registry.npmjs.org/react set size:6115230 disposed:false
+34 silly fetch manifest react-dom@^18
+35 silly packumentCache full:https://registry.npmjs.org/react-dom cache-miss
+36 http cache https://registry.npmjs.org/react-dom 21ms (cache hit)
+37 silly packumentCache full:https://registry.npmjs.org/react-dom set size:7950080 disposed:false
+38 silly fetch manifest sass@^1.3.0
+39 silly packumentCache full:https://registry.npmjs.org/sass cache-miss
+40 http cache https://registry.npmjs.org/sass 8ms (cache hit)
+41 silly packumentCache full:https://registry.npmjs.org/sass set size:697197 disposed:false
+42 silly placeDep ROOT geist@1.5.1 REPLACE for: my-v0-project@0.1.0 want: ^1.3.1
+43 silly reify moves {}
+44 silly audit bulk request {
+44 silly audit   '@alloc/quick-lru': [ '5.2.0' ],
+44 silly audit   '@babel/runtime': [ '7.28.4' ],
+44 silly audit   '@date-fns/tz': [ '1.2.0' ],
+44 silly audit   '@floating-ui/core': [ '1.7.3' ],
+44 silly audit   '@floating-ui/dom': [ '1.7.4' ],
+44 silly audit   '@floating-ui/react-dom': [ '2.1.6' ],
+44 silly audit   '@floating-ui/utils': [ '0.2.10' ],
+44 silly audit   '@hookform/resolvers': [ '3.10.0' ],
+44 silly audit   '@isaacs/fs-minipass': [ '4.0.1' ],
+44 silly audit   '@jridgewell/gen-mapping': [ '0.3.13' ],
+44 silly audit   '@jridgewell/remapping': [ '2.3.5' ],
+44 silly audit   '@jridgewell/resolve-uri': [ '3.1.2' ],
+44 silly audit   '@jridgewell/sourcemap-codec': [ '1.5.5' ],
+44 silly audit   '@jridgewell/trace-mapping': [ '0.3.31' ],
+44 silly audit   '@next/env': [ '14.2.16' ],
+44 silly audit   '@next/swc-darwin-arm64': [ '14.2.16' ],
+44 silly audit   '@next/swc-darwin-x64': [ '14.2.16' ],
+44 silly audit   '@next/swc-linux-arm64-gnu': [ '14.2.16' ],
+44 silly audit   '@next/swc-linux-arm64-musl': [ '14.2.16' ],
+44 silly audit   '@next/swc-linux-x64-gnu': [ '14.2.16' ],
+44 silly audit   '@next/swc-linux-x64-musl': [ '14.2.16' ],
+44 silly audit   '@next/swc-win32-arm64-msvc': [ '14.2.16' ],
+44 silly audit   '@next/swc-win32-ia32-msvc': [ '14.2.16' ],
+44 silly audit   '@next/swc-win32-x64-msvc': [ '14.2.16' ],
+44 silly audit   '@radix-ui/number': [ '1.1.0' ],
+44 silly audit   '@radix-ui/primitive': [ '1.1.1' ],
+44 silly audit   '@radix-ui/react-accordion': [ '1.2.2' ],
+44 silly audit   '@radix-ui/react-alert-dialog': [ '1.1.4' ],
+44 silly audit   '@radix-ui/react-arrow': [ '1.1.1' ],
+44 silly audit   '@radix-ui/react-aspect-ratio': [ '1.1.1' ],
+44 silly audit   '@radix-ui/react-avatar': [ '1.1.2' ],
+44 silly audit   '@radix-ui/react-checkbox': [ '1.1.3' ],
+44 silly audit   '@radix-ui/react-collapsible': [ '1.1.2' ],
+44 silly audit   '@radix-ui/react-collection': [ '1.1.1' ],
+44 silly audit   '@radix-ui/react-compose-refs': [ '1.1.1' ],
+44 silly audit   '@radix-ui/react-context': [ '1.1.1' ],
+44 silly audit   '@radix-ui/react-context-menu': [ '2.2.4' ],
+44 silly audit   '@radix-ui/react-dialog': [ '1.1.4' ],
+44 silly audit   '@radix-ui/react-direction': [ '1.1.0' ],
+44 silly audit   '@radix-ui/react-dismissable-layer': [ '1.1.3' ],
+44 silly audit   '@radix-ui/react-dropdown-menu': [ '2.1.4' ],
+44 silly audit   '@radix-ui/react-focus-guards': [ '1.1.1' ],
+44 silly audit   '@radix-ui/react-focus-scope': [ '1.1.1' ],
+44 silly audit   '@radix-ui/react-hover-card': [ '1.1.4' ],
+44 silly audit   '@radix-ui/react-id': [ '1.1.0' ],
+44 silly audit   '@radix-ui/react-label': [ '2.1.1' ],
+44 silly audit   '@radix-ui/react-menu': [ '2.1.4' ],
+44 silly audit   '@radix-ui/react-menubar': [ '1.1.4' ],
+44 silly audit   '@radix-ui/react-navigation-menu': [ '1.2.3' ],
+44 silly audit   '@radix-ui/react-popover': [ '1.1.4' ],
+44 silly audit   '@radix-ui/react-popper': [ '1.2.1' ],
+44 silly audit   '@radix-ui/react-portal': [ '1.1.3' ],
+44 silly audit   '@radix-ui/react-presence': [ '1.1.2' ],
+44 silly audit   '@radix-ui/react-primitive': [ '2.0.1' ],
+44 silly audit   '@radix-ui/react-progress': [ '1.1.1' ],
+44 silly audit   '@radix-ui/react-radio-group': [ '1.2.2' ],
+44 silly audit   '@radix-ui/react-roving-focus': [ '1.1.1' ],
+44 silly audit   '@radix-ui/react-scroll-area': [ '1.2.2' ],
+44 silly audit   '@radix-ui/react-select': [ '2.1.4' ],
+44 silly audit   '@radix-ui/react-separator': [ '1.1.1' ],
+44 silly audit   '@radix-ui/react-slider': [ '1.2.2' ],
+44 silly audit   '@radix-ui/react-slot': [ '1.1.1' ],
+44 silly audit   '@radix-ui/react-switch': [ '1.1.2' ],
+44 silly audit   '@radix-ui/react-tabs': [ '1.1.2' ],
+44 silly audit   '@radix-ui/react-toast': [ '1.2.4' ],
+44 silly audit   '@radix-ui/react-toggle': [ '1.1.1' ],
+44 silly audit   '@radix-ui/react-toggle-group': [ '1.1.1' ],
+44 silly audit   '@radix-ui/react-tooltip': [ '1.1.6' ],
+44 silly audit   '@radix-ui/react-use-callback-ref': [ '1.1.0' ],
+44 silly audit   '@radix-ui/react-use-controllable-state': [ '1.1.0' ],
+44 silly audit   '@radix-ui/react-use-escape-keydown': [ '1.1.0' ],
+44 silly audit   '@radix-ui/react-use-layout-effect': [ '1.1.0' ],
+44 silly audit   '@radix-ui/react-use-previous': [ '1.1.0' ],
+44 silly audit   '@radix-ui/react-use-rect': [ '1.1.0' ],
+44 silly audit   '@radix-ui/react-use-size': [ '1.1.0' ],
+44 silly audit   '@radix-ui/react-visually-hidden': [ '1.1.1' ],
+44 silly audit   '@radix-ui/rect': [ '1.1.0' ],
+44 silly audit   '@swc/counter': [ '0.1.3' ],
+44 silly audit   '@swc/helpers': [ '0.5.5' ],
+44 silly audit   '@tailwindcss/node': [ '4.1.14' ],
+44 silly audit   '@tailwindcss/oxide': [ '4.1.14' ],
+44 silly audit   '@tailwindcss/oxide-android-arm64': [ '4.1.14' ],
+44 silly audit   '@tailwindcss/oxide-darwin-arm64': [ '4.1.14' ],
+44 silly audit   '@tailwindcss/oxide-darwin-x64': [ '4.1.14' ],
+44 silly audit   '@tailwindcss/oxide-freebsd-x64': [ '4.1.14' ],
+44 silly audit   '@tailwindcss/oxide-linux-arm-gnueabihf': [ '4.1.14' ],
+44 silly audit   '@tailwindcss/oxide-linux-arm64-gnu': [ '4.1.14' ],
+44 silly audit   '@tailwindcss/oxide-linux-arm64-musl': [ '4.1.14' ],
+44 silly audit   '@tailwindcss/oxide-linux-x64-gnu': [ '4.1.14' ],
+44 silly audit   '@tailwindcss/oxide-linux-x64-musl': [ '4.1.14' ],
+44 silly audit   '@tailwindcss/oxide-wasm32-wasi': [ '4.1.14' ],
+44 silly audit   '@tailwindcss/oxide-win32-arm64-msvc': [ '4.1.14' ],
+44 silly audit   '@tailwindcss/oxide-win32-x64-msvc': [ '4.1.14' ],
+44 silly audit   '@tailwindcss/postcss': [ '4.1.14' ],
+44 silly audit   '@types/d3-array': [ '3.2.2' ],
+44 silly audit   '@types/d3-color': [ '3.1.3' ],
+44 silly audit   '@types/d3-ease': [ '3.0.2' ],
+44 silly audit   '@types/d3-interpolate': [ '3.0.4' ],
+44 silly audit   '@types/d3-path': [ '3.1.1' ],
+44 silly audit   '@types/d3-scale': [ '4.0.9' ],
+44 silly audit   '@types/d3-shape': [ '3.1.7' ],
+44 silly audit   '@types/d3-time': [ '3.0.4' ],
+44 silly audit   '@types/d3-timer': [ '3.0.2' ],
+44 silly audit   '@types/node': [ '22.18.8' ],
+44 silly audit   '@types/prop-types': [ '15.7.15' ],
+44 silly audit   '@types/react': [ '18.3.25' ],
+44 silly audit   '@types/react-dom': [ '18.3.7' ],
+44 silly audit   '@vercel/analytics': [ '1.3.1' ],
+44 silly audit   'aria-hidden': [ '1.2.6' ],
+44 silly audit   autoprefixer: [ '10.4.21' ],
+44 silly audit   'baseline-browser-mapping': [ '2.8.10' ],
+44 silly audit   browserslist: [ '4.26.3' ],
+44 silly audit   busboy: [ '1.6.0' ],
+44 silly audit   'caniuse-lite': [ '1.0.30001746' ],
+44 silly audit   chownr: [ '3.0.0' ],
+44 silly audit   'class-variance-authority': [ '0.7.1' ],
+44 silly audit   'client-only': [ '0.0.1' ],
+44 silly audit   clsx: [ '2.1.1' ],
+44 silly audit   cmdk: [ '1.0.4' ],
+44 silly audit   csstype: [ '3.1.3' ],
+44 silly audit   'd3-array': [ '3.2.4' ],
+44 silly audit   'd3-color': [ '3.1.0' ],
+44 silly audit   'd3-ease': [ '3.0.1' ],
+44 silly audit   'd3-format': [ '3.1.0' ],
+44 silly audit   'd3-interpolate': [ '3.0.1' ],
+44 silly audit   'd3-path': [ '3.1.0' ],
+44 silly audit   'd3-scale': [ '4.0.2' ],
+44 silly audit   'd3-shape': [ '3.2.0' ],
+44 silly audit   'd3-time': [ '3.1.0' ],
+44 silly audit   'd3-time-format': [ '4.1.0' ],
+44 silly audit   'd3-timer': [ '3.0.1' ],
+44 silly audit   'date-fns': [ '4.1.0' ],
+44 silly audit   'date-fns-jalali': [ '4.1.0-0' ],
+44 silly audit   'decimal.js-light': [ '2.5.1' ],
+44 silly audit   'detect-libc': [ '2.1.1' ],
+44 silly audit   'detect-node-es': [ '1.1.0' ],
+44 silly audit   'dom-helpers': [ '5.2.1' ],
+44 silly audit   'electron-to-chromium': [ '1.5.228' ],
+44 silly audit   'embla-carousel': [ '8.5.1' ],
+44 silly audit   'embla-carousel-react': [ '8.5.1' ],
+44 silly audit   'embla-carousel-reactive-utils': [ '8.5.1' ],
+44 silly audit   'enhanced-resolve': [ '5.18.3' ],
+44 silly audit   escalade: [ '3.2.0' ],
+44 silly audit   eventemitter3: [ '4.0.7' ],
+44 silly audit   'fast-equals': [ '5.3.2' ],
+44 silly audit   'fraction.js': [ '4.3.7' ],
+44 silly audit   'get-nonce': [ '1.0.1' ],
+44 silly audit   'graceful-fs': [ '4.2.11' ],
+44 silly audit   'input-otp': [ '1.4.1' ],
+44 silly audit   internmap: [ '2.0.3' ],
+44 silly audit   jiti: [ '2.6.1' ],
+44 silly audit   'js-tokens': [ '4.0.0' ],
+44 silly audit   lightningcss: [ '1.30.1' ],
+44 silly audit   'lightningcss-darwin-arm64': [ '1.30.1' ],
+44 silly audit   'lightningcss-darwin-x64': [ '1.30.1' ],
+44 silly audit   'lightningcss-freebsd-x64': [ '1.30.1' ],
+44 silly audit   'lightningcss-linux-arm-gnueabihf': [ '1.30.1' ],
+44 silly audit   'lightningcss-linux-arm64-gnu': [ '1.30.1' ],
+44 silly audit   'lightningcss-linux-arm64-musl': [ '1.30.1' ],
+44 silly audit   'lightningcss-linux-x64-gnu': [ '1.30.1' ],
+44 silly audit   'lightningcss-linux-x64-musl': [ '1.30.1' ],
+44 silly audit   'lightningcss-win32-arm64-msvc': [ '1.30.1' ],
+44 silly audit   'lightningcss-win32-x64-msvc': [ '1.30.1' ],
+44 silly audit   lodash: [ '4.17.21' ],
+44 silly audit   'loose-envify': [ '1.4.0' ],
+44 silly audit   'lucide-react': [ '0.454.0' ],
+44 silly audit   'magic-string': [ '0.30.19' ],
+44 silly audit   minipass: [ '7.1.2' ],
+44 silly audit   minizlib: [ '3.1.0' ],
+44 silly audit   nanoid: [ '3.3.11' ],
+44 silly audit   next: [ '14.2.16' ],
+44 silly audit   'next-themes': [ '0.4.6' ],
+44 silly audit   postcss: [ '8.4.31', '8.5.6' ],
+44 silly audit   'node-releases': [ '2.0.21' ],
+44 silly audit   'normalize-range': [ '0.1.2' ],
+44 silly audit   'object-assign': [ '4.1.1' ],
+44 silly audit   picocolors: [ '1.1.1' ],
+44 silly audit   'postcss-value-parser': [ '4.2.0' ],
+44 silly audit   'prop-types': [ '15.8.1' ],
+44 silly audit   'react-is': [ '16.13.1', '18.3.1' ],
+44 silly audit   react: [ '18.3.1' ],
+44 silly audit   'react-day-picker': [ '9.8.0' ],
+44 silly audit   'react-dom': [ '18.3.1' ],
+44 silly audit   'react-hook-form': [ '7.63.0' ],
+44 silly audit   'react-remove-scroll': [ '2.7.1' ],
+44 silly audit   'react-remove-scroll-bar': [ '2.3.8' ],
+44 silly audit   'react-resizable-panels': [ '2.1.9' ],
+44 silly audit   'react-smooth': [ '4.0.4' ],
+44 silly audit   'react-style-singleton': [ '2.2.3' ],
+44 silly audit   'react-transition-group': [ '4.4.5' ],
+44 silly audit   recharts: [ '2.15.4' ],
+44 silly audit   'recharts-scale': [ '0.4.5' ],
+44 silly audit   scheduler: [ '0.23.2' ],
+44 silly audit   'server-only': [ '0.0.1' ],
+44 silly audit   sonner: [ '2.0.7' ],
+44 silly audit   'source-map-js': [ '1.2.1' ],
+44 silly audit   streamsearch: [ '1.1.0' ],
+44 silly audit   'styled-jsx': [ '5.1.1' ],
+44 silly audit   'tailwind-merge': [ '2.6.0' ],
+44 silly audit   tailwindcss: [ '4.1.14' ],
+44 silly audit   'tailwindcss-animate': [ '1.0.7' ],
+44 silly audit   tapable: [ '2.2.3' ],
+44 silly audit   tar: [ '7.5.1' ],
+44 silly audit   'tiny-invariant': [ '1.3.3' ],
+44 silly audit   tslib: [ '2.8.1' ],
+44 silly audit   'tw-animate-css': [ '1.3.3' ],
+44 silly audit   typescript: [ '5.9.3' ],
+44 silly audit   'undici-types': [ '6.21.0' ],
+44 silly audit   'update-browserslist-db': [ '1.1.3' ],
+44 silly audit   'use-callback-ref': [ '1.3.3' ],
+44 silly audit   'use-sidecar': [ '1.1.3' ],
+44 silly audit   'use-sync-external-store': [ '1.6.0' ],
+44 silly audit   vaul: [ '0.9.9' ],
+44 silly audit   'victory-vendor': [ '36.9.2' ],
+44 silly audit   yallist: [ '5.0.0' ],
+44 silly audit   zod: [ '3.25.67' ],
+44 silly audit   geist: [ '1.5.1' ]
+44 silly audit }
+45 http fetch POST 200 https://registry.npmjs.org/-/npm/v1/security/advisories/bulk 558ms
+46 silly audit report {
+46 silly audit report   next: [
+46 silly audit report     {
+46 silly audit report       id: 1101438,
+46 silly audit report       url: 'https://github.com/advisories/GHSA-7m27-7ghc-44w9',
+46 silly audit report       title: 'Next.js Allows a Denial of Service (DoS) with Server Actions',
+46 silly audit report       severity: 'moderate',
+46 silly audit report       vulnerable_versions: '>=14.0.0 <14.2.21',
+46 silly audit report       cwe: [Array],
+46 silly audit report       cvss: [Object]
+46 silly audit report     },
+46 silly audit report     {
+46 silly audit report       id: 1104490,
+46 silly audit report       url: 'https://github.com/advisories/GHSA-qpjv-v59x-3qc4',
+46 silly audit report       title: 'Next.js Race Condition to Cache Poisoning',
+46 silly audit report       severity: 'low',
+46 silly audit report       vulnerable_versions: '<14.2.24',
+46 silly audit report       cwe: [Array],
+46 silly audit report       cvss: [Object]
+46 silly audit report     },
+46 silly audit report     {
+46 silly audit report       id: 1105461,
+46 silly audit report       url: 'https://github.com/advisories/GHSA-3h52-269p-cp9r',
+46 silly audit report       title: 'Information exposure in Next.js dev server due to lack of origin verification',
+46 silly audit report       severity: 'low',
+46 silly audit report       vulnerable_versions: '>=13.0 <14.2.30',
+46 silly audit report       cwe: [Array],
+46 silly audit report       cvss: [Object]
+46 silly audit report     },
+46 silly audit report     {
+46 silly audit report       id: 1107226,
+46 silly audit report       url: 'https://github.com/advisories/GHSA-g5qg-72qw-gw5v',
+46 silly audit report       title: 'Next.js Affected by Cache Key Confusion for Image Optimization API Routes',
+46 silly audit report       severity: 'moderate',
+46 silly audit report       vulnerable_versions: '>=0.9.9 <14.2.31',
+46 silly audit report       cwe: [Array],
+46 silly audit report       cvss: [Object]
+46 silly audit report     },
+46 silly audit report     {
+46 silly audit report       id: 1107415,
+46 silly audit report       url: 'https://github.com/advisories/GHSA-f82v-jwr5-mffw',
+46 silly audit report       title: 'Authorization Bypass in Next.js Middleware',
+46 silly audit report       severity: 'critical',
+46 silly audit report       vulnerable_versions: '>=14.0.0 <14.2.25',
+46 silly audit report       cwe: [Array],
+46 silly audit report       cvss: [Object]
+46 silly audit report     },
+46 silly audit report     {
+46 silly audit report       id: 1107512,
+46 silly audit report       url: 'https://github.com/advisories/GHSA-4342-x723-ch2f',
+46 silly audit report       title: 'Next.js Improper Middleware Redirect Handling Leads to SSRF',
+46 silly audit report       severity: 'moderate',
+46 silly audit report       vulnerable_versions: '>=0.9.9 <14.2.32',
+46 silly audit report       cwe: [Array],
+46 silly audit report       cvss: [Object]
+46 silly audit report     },
+46 silly audit report     {
+46 silly audit report       id: 1107513,
+46 silly audit report       url: 'https://github.com/advisories/GHSA-xv57-4mr9-wg8v',
+46 silly audit report       title: 'Next.js Content Injection Vulnerability for Image Optimization',
+46 silly audit report       severity: 'moderate',
+46 silly audit report       vulnerable_versions: '>=0.9.9 <14.2.31',
+46 silly audit report       cwe: [Array],
+46 silly audit report       cvss: [Object]
+46 silly audit report     }
+46 silly audit report   ]
+46 silly audit report }
+47 silly packumentCache corgi:https://registry.npmjs.org/next cache-miss
+48 http cache https://registry.npmjs.org/next 49ms (cache hit)
+49 silly packumentCache corgi:https://registry.npmjs.org/next set size:21900277 disposed:false
+50 silly packumentCache corgi:https://registry.npmjs.org/@vercel%2fanalytics cache-miss
+51 silly packumentCache corgi:https://registry.npmjs.org/geist cache-miss
+52 http cache https://registry.npmjs.org/geist 41ms (cache hit)
+53 silly packumentCache corgi:https://registry.npmjs.org/geist set size:36500 disposed:false
+54 http cache https://registry.npmjs.org/@vercel%2fanalytics 51ms (cache hit)
+55 silly packumentCache corgi:https://registry.npmjs.org/@vercel%2fanalytics set size:85397 disposed:false
+56 verbose cwd C:\Users\ASUS\front-base
+57 verbose os Windows_NT 10.0.26100
+58 verbose node v20.17.0
+59 verbose npm  v11.6.1
+60 verbose exit 0
+61 info ok

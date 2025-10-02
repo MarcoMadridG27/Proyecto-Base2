@@ -1,0 +1,216 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Enhanced color palette with richer tones and better contrast */
+  --background: oklch(0.08 0.01 264);
+  --foreground: oklch(0.98 0.01 264);
+  --card: oklch(0.12 0.015 264);
+  --card-foreground: oklch(0.98 0.01 264);
+  --popover: oklch(0.12 0.015 264);
+  --popover-foreground: oklch(0.98 0.01 264);
+  --primary: oklch(0.65 0.22 252);
+  --primary-foreground: oklch(0.98 0.01 264);
+  --secondary: oklch(0.68 0.18 166);
+  --secondary-foreground: oklch(0.08 0.01 264);
+  --muted: oklch(0.18 0.015 264);
+  --muted-foreground: oklch(0.58 0.01 264);
+  --accent: oklch(0.22 0.02 264);
+  --accent-foreground: oklch(0.98 0.01 264);
+  --destructive: oklch(0.62 0.24 27);
+  --destructive-foreground: oklch(0.98 0.01 264);
+  --border: oklch(0.22 0.02 264);
+  --input: oklch(0.22 0.02 264);
+  --ring: oklch(0.65 0.22 252);
+  --chart-1: oklch(0.65 0.22 252);
+  --chart-2: oklch(0.68 0.18 166);
+  --chart-3: oklch(0.72 0.2 285);
+  --chart-4: oklch(0.7 0.22 45);
+  --chart-5: oklch(0.68 0.2 330);
+  --radius: 0.75rem;
+  --sidebar: oklch(0.1 0.015 264);
+  --sidebar-foreground: oklch(0.98 0.01 264);
+  --sidebar-primary: oklch(0.65 0.22 252);
+  --sidebar-primary-foreground: oklch(0.98 0.01 264);
+  --sidebar-accent: oklch(0.18 0.02 264);
+  --sidebar-accent-foreground: oklch(0.98 0.01 264);
+  --sidebar-border: oklch(0.22 0.02 264);
+  --sidebar-ring: oklch(0.65 0.22 252);
+}
+
+@theme inline {
+  /* Color Palette - Enhanced Dark Academic Theme */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply text-balance;
+  }
+
+  p {
+    @apply text-pretty;
+  }
+}
+
+/* Enhanced glassmorphism with better backdrop blur and subtle gradient border */
+.glass-card {
+  @apply bg-card/80 backdrop-blur-xl border border-white/10;
+  background-image: linear-gradient(135deg, oklch(0.12 0.015 264 / 0.8) 0%, oklch(0.1 0.015 264 / 0.8) 100%);
+}
+
+/* Added modern animation utilities */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 20px oklch(0.65 0.22 252 / 0.3);
+  }
+  50% {
+    box-shadow: 0 0 30px oklch(0.65 0.22 252 / 0.5);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out;
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left 0.5s ease-out;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.4s ease-out;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* Staggered animation delays for list items */
+.stagger-1 {
+  animation-delay: 0.1s;
+}
+.stagger-2 {
+  animation-delay: 0.2s;
+}
+.stagger-3 {
+  animation-delay: 0.3s;
+}
+.stagger-4 {
+  animation-delay: 0.4s;
+}
+.stagger-5 {
+  animation-delay: 0.5s;
+}
+.stagger-6 {
+  animation-delay: 0.6s;
+}
+.stagger-7 {
+  animation-delay: 0.7s;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-white/10 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-white/20;
+}
