@@ -1,0 +1,25 @@
+# Ignorar node_modules (archivos de dependencias)
+node_modules/
+
+# Ignorar caché de npm
+npm-cache/
+.npm/
+
+# Ignorar archivos de log
+*.log
+
+# Ignorar cache de Yarn
+.yarn-cache/
+
+# Ignorar archivos generados por IDEs
+.idea/
+.vscode/
+
+# Ignorar caché de npm en front-base (si aplica)
+front-base/npm-cache/
+
+# Ignorar archivos de log en front-base
+front-base/*.log
+
+# Ignorar node_modules dentro de front-base (si necesario)
+front-base/node_modules/
