@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Upload, FileText, X, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Input } from "@/components/ui/input"
 
 export function FileUpload() {
   const [isDragging, setIsDragging] = useState(false)
@@ -15,6 +16,7 @@ export function FileUpload() {
   const [preview, setPreview] = useState<any[] | null>(null)
   const [headers, setHeaders] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
+  const [tableName, setTableName] = useState("") // Nuevo: nombre de la tabla
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -35,6 +37,8 @@ export function FileUpload() {
 
     if (csvFile) {
       setUploadedFile(csvFile)
+      // Si no se asigna nombre aún, por defecto usamos el del archivo
+      setTableName(csvFile.name.replace(".csv", ""))
       toast.success("File ready to upload!", {
         description: `${csvFile.name}`,
       })
@@ -47,6 +51,7 @@ export function FileUpload() {
     const file = e.target.files?.[0]
     if (file && file.name.endsWith(".csv")) {
       setUploadedFile(file)
+      setTableName(file.name.replace(".csv", "")) // default
       toast.success("File ready to upload!", { description: file.name })
     } else {
       toast.error("Invalid file type", { description: "Please upload a CSV file." })
@@ -57,15 +62,20 @@ export function FileUpload() {
     setUploadedFile(null)
     setPreview(null)
     setHeaders([])
+    setTableName("")
     toast.info("File removed")
   }
 
   const handleUploadToBackend = async () => {
     if (!uploadedFile) return
+    if (!tableName.trim()) {
+      toast.error("Missing table name", { description: "Please enter a name for the table." })
+      return
+    }
 
     const formData = new FormData()
     formData.append("file", uploadedFile)
-    formData.append("table_name", uploadedFile.name.replace(".csv", ""))
+    formData.append("table_name", tableName.trim())
 
     setLoading(true)
 
@@ -82,7 +92,7 @@ export function FileUpload() {
         setPreview(data.rows)
         setHeaders(data.headers)
         toast.success("File imported successfully!", {
-          description: `${data.recordCount} records from ${data.fileName}`,
+          description: `Table: ${data.tableName} (${data.recordCount} records)`,
         })
       } else {
         toast.error("Error importing file", { description: data.error })
@@ -150,23 +160,16 @@ export function FileUpload() {
 
           {/* Uploaded File Info */}
           {uploadedFile && (
-            <div className="mt-6 flex items-center gap-4 rounded-lg border border-white/10 bg-white/5 p-4 animate-scale-in hover:bg-white/10 hover:shadow-lg hover:shadow-secondary/20 transition-all duration-300">
-              <FileText className="h-8 w-8 text-primary" />
-              <div className="flex-1">
-                <p className="font-medium">{uploadedFile.name}</p>
-                <p className="text-sm text-muted-foreground">
-                  {loading ? "Uploading..." : "Ready to import"}
-                </p>
-              </div>
-              <CheckCircle2 className="h-5 w-5 text-secondary animate-pulse" />
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleUploadToBackend}
-                  disabled={loading}
-                  className="hover:scale-105 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300"
-                >
-                  {loading ? "Uploading..." : "Import to Database"}
-                </Button>
+            <div className="mt-6 space-y-4">
+              <div className="flex items-center gap-4 rounded-lg border border-white/10 bg-white/5 p-4 animate-scale-in">
+                <FileText className="h-8 w-8 text-primary" />
+                <div className="flex-1">
+                  <p className="font-medium">{uploadedFile.name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {loading ? "Uploading..." : "Ready to import"}
+                  </p>
+                </div>
+                <CheckCircle2 className="h-5 w-5 text-secondary animate-pulse" />
                 <Button
                   variant="ghost"
                   size="icon"
@@ -176,6 +179,25 @@ export function FileUpload() {
                   <X className="h-4 w-4" />
                 </Button>
               </div>
+
+              {/* Input para nombre de la tabla */}
+              <div>
+                <label className="text-sm font-medium">Table name</label>
+                <Input
+                  value={tableName}
+                  onChange={(e) => setTableName(e.target.value)}
+                  placeholder="e.g. crocodiles_2025"
+                  className="mt-2"
+                />
+              </div>
+
+              <Button
+                onClick={handleUploadToBackend}
+                disabled={loading}
+                className="hover:scale-105 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300"
+              >
+                {loading ? "Uploading..." : "Import to Database"}
+              </Button>
             </div>
           )}
         </CardContent>
@@ -210,22 +232,6 @@ export function FileUpload() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <Button
-                variant="outline"
-                onClick={handleRemoveFile}
-                className="hover:scale-105 transition-transform duration-300 bg-transparent"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleUploadToBackend}
-                disabled={loading}
-                className="hover:scale-105 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300"
-              >
-                {loading ? "Uploading..." : "Import to Database"}
-              </Button>
             </div>
           </CardContent>
         </Card>

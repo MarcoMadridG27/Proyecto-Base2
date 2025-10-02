@@ -9,7 +9,7 @@ class Executor:
         El Executor se conecta con el SchemaManager, 
         que maneja tablas, archivos e índices.
         """
-        self.db = SchemaManager(data_dir)
+        self.schema_manager = SchemaManager(data_dir)
         self.parser = SQLParser()
 
     def execute(self, query: str):
@@ -17,22 +17,25 @@ class Executor:
         op = ast["operation"]
 
         if op == "create":
-            # ast["details"] debe tener columns + index_map
-            return self.db.create_table(ast["table"], ast["columns"], ast.get("index_map"))
+            return self.schema_manager.create_table(
+                ast["table"], ast["columns"], ast.get("index_map")
+            )
 
         elif op == "insert":
-            return self.db.insert(ast["table"], ast["values"])
+            return self.schema_manager.insert(ast["table"], ast["values"])
 
         elif op == "delete":
-            return self.db.delete(ast["table"], ast["condition"])
+            return self.schema_manager.delete(ast["table"], ast["condition"])
 
         elif op == "select":
-            return self.db.select(
+            return self.schema_manager.select(
                 ast["table"],
                 ast["columns"],
                 ast["condition"],
-                index=ast.get("index")  # si en la query eliges índice explícito
+                index=ast.get("index"),
+                limit=ast.get("limit")
             )
+
 
         else:
             raise ValueError(f"Operación no soportada: {op}")

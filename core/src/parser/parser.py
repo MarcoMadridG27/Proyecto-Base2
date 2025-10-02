@@ -89,27 +89,50 @@ class SQLParser:
         }
 
     def _parse_select(self, tokens):
-        # SELECT col FROM table WHERE cond [USING <index>]
-        from_index = tokens.index("from")
-        columns = tokens[1:from_index]
-        table = tokens[from_index+1]
 
-        condition, index = None, None
+        from_index = tokens.index("from")
+        raw_columns = tokens[1:from_index]
+
+        columns = [c.strip(",") for c in raw_columns if c != ","]
+
+        table = tokens[from_index + 1]
+
+        condition, index, limit = None, None, None
+
         if "where" in tokens:
             where_index = tokens.index("where")
-            condition = " ".join(tokens[where_index+1:])
+            end_idx = len(tokens)
+            if "using" in tokens:
+                end_idx = tokens.index("using")
+            if "limit" in tokens:
+                end_idx = min(end_idx, tokens.index("limit"))
+            condition = " ".join(tokens[where_index + 1:end_idx])
 
         if "using" in tokens:
             idx_index = tokens.index("using")
-            index = tokens[idx_index+1]
+            # hasta LIMIT o fin
+            if "limit" in tokens:
+                end_idx = tokens.index("limit")
+                index = " ".join(tokens[idx_index + 1:end_idx])
+            else:
+                index = tokens[idx_index + 1]
+
+        if "limit" in tokens:
+            limit_index = tokens.index("limit")
+            try:
+                limit = int(tokens[limit_index + 1])
+            except:
+                raise ValueError("LIMIT debe ir seguido de un número entero")
 
         return {
             "operation": "select",
             "table": table,
-            "columns": columns,
+            "columns": columns if columns else ["*"],
             "condition": condition,
-            "index": index
+            "index": index,
+            "limit": limit
         }
+
 
 
 if __name__ == "__main__":

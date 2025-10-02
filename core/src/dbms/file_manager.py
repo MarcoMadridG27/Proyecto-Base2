@@ -21,15 +21,16 @@ class FileManager:
                 pass
 
     def append_record(self, record_dict):
-        """
-        Agrega un registro al final del archivo.
-        Devuelve el offset donde fue escrito.
-        """
         data = self.schema.pack(record_dict)
+        print(f"[DEBUG] Empacando registro: {record_dict}")
+        print(f"[DEBUG] Bytes generados: {len(data)} -> {data[:50]}...")  # primeras 50 bytes
         with open(self.filename, "ab") as f:
             offset = f.tell()
+            print(f"[DEBUG] Offset antes de escribir: {offset}")
             f.write(data)
+            print(f"[DEBUG] Nuevo tamaño archivo: {f.tell()}")
         return offset
+
 
     def read_record(self, offset):
         """

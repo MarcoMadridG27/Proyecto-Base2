@@ -1,0 +1,67 @@
+{
+  "prueba": {
+    "columns": [
+      {
+        "name": "observation_id",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "common_name",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "scientific_name",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "family",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "genus",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "observed_length_(m)",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "observed_weight_(kg)",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "age_class",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "sex",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "date_of_observation",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "country/region",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "habitat_type",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "conservation_status",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "observer_name",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "notes",
+        "type": "VARCHAR[100]"
+      }
+    ],
+    "indexes": []
+  }
+}

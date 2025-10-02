@@ -59,10 +59,14 @@ def run_query(request: QueryRequest):
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), table_name: str = Form("uploaded_table")):
+    """
+    Sube un CSV, lo guarda como tabla en el motor y queda persistido en catalog.json
+    """
     try:
         os.makedirs("data", exist_ok=True)
         save_path = os.path.join("data", file.filename)
 
+        # Guardar archivo CSV en disco
         with open(save_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
@@ -70,77 +74,72 @@ async def upload_file(file: UploadFile = File(...), table_name: str = Form("uplo
         rows = []
         all_data = []
         record_count = 0
-        
+
+        # Leer el CSV
         with open(save_path, newline='', encoding="utf-8") as csvfile:
             reader = csv.reader(csvfile)
-            headers = next(reader)
-            
+            headers = next(reader)  # primera fila = cabeceras
+
             for i, row in enumerate(reader):
                 all_data.append(row)
-                if i < 10:
+                if i < 10:  # preview
                     rows.append(row)
                 record_count = i + 1
 
-        clean_headers = [col.strip().replace(' ', '_').replace('-', '_').lower() for col in headers]
-        columns_def = ", ".join([f"{col} VARCHAR[100]" for col in clean_headers])
-        create_query = f'CREATE TABLE {table_name} ({columns_def})'
-        
-        print(f"Ejecutando CREATE: {create_query}")
-        executor.execute(create_query)
+        # Normalizar headers (sin espacios, todo lowercase)
+        clean_headers = [col.strip().replace(" ", "_").replace("-", "_").lower() for col in headers]
+
+        # Definir columnas como lista de dicts (para SchemaManager)
+        columns_def = [{"name": col, "type": "VARCHAR[100]"} for col in clean_headers]
+
+        # --- Crear tabla solo si no existe ---
+        if table_name in executor.schema_manager.tables:
+            return JSONResponse(
+                content={"ok": False, "error": f"La tabla '{table_name}' ya existe."},
+                status_code=400
+            )
+
+        executor.schema_manager.create_table(table_name, columns_def)
 
         inserted = 0
         failed = 0
-        
+
+        # Insertar cada fila como diccionario
         for row_data in all_data:
             try:
-                formatted_values = []
-                for val in row_data:
-                    val_str = str(val).strip()
-                    if val_str.replace('.', '').replace('-', '').isdigit():
-                        formatted_values.append(val_str)
-                    else:
-                        val_escaped = val_str.replace("'", "''")
-                        formatted_values.append(f"'{val_escaped}'")
-                
-                values_str = ", ".join(formatted_values)
-                insert_query = f"INSERT INTO {table_name} VALUES ({values_str})"
-                
-                print(f"INSERT query: {insert_query}")  # ← AGREGAR ESTO
-                result = executor.execute(insert_query)
-                print(f"INSERT result: {result}")  # ← AGREGAR ESTO
+                record_dict = {col: val.strip() for col, val in zip(clean_headers, row_data)}
+                executor.schema_manager.insert(table_name, record_dict)
                 inserted += 1
-                
             except Exception as insert_error:
-                print(f"Error insertando fila {inserted + failed + 1}: {insert_error}")
-                import traceback
-                traceback.print_exc()  # ← AGREGAR ESTO para ver el error completo
+                print(f"[ERROR] insertando fila {inserted + failed + 1}: {insert_error}")
                 failed += 1
 
         # Verificar que se insertaron los datos
-        verify_query = f"SELECT * FROM {table_name}"
-        verify_result = executor.execute(verify_query)
-        print(f"Verificación - registros en tabla: {len(verify_result)}")  # ← AGREGAR ESTO
+        verify = executor.schema_manager.select(table_name, ["*"], None)
+        print(f"[DEBUG] Registros en {table_name}: {len(verify)}")
 
         return {
             "ok": True,
             "fileName": file.filename,
+            "tableName": table_name,
             "fileSize": f"{round(os.path.getsize(save_path)/1024, 2)} KB",
             "recordCount": record_count,
             "inserted": inserted,
             "failed": failed,
             "headers": clean_headers,
             "rows": rows,
-            "message": f"Tabla '{table_name}' creada. Insertados: {inserted}, Fallidos: {failed}"
+            "message": f"Tabla '{table_name}' creada y persistida. Insertados: {inserted}, Fallidos: {failed}"
         }
-        
+
     except Exception as e:
         import traceback
         error_detail = traceback.format_exc()
-        print(f"Error en upload: {error_detail}")
+        print(f"[ERROR] upload: {error_detail}")
         return JSONResponse(
-            content={"ok": False, "error": str(e), "detail": error_detail}, 
+            content={"ok": False, "error": str(e), "detail": error_detail},
             status_code=500
         )
+
 @app.post("/create_index")
 def create_index(request: IndexRequest):
     """
