@@ -1,3 +1,34 @@
+# ================================
+# 🔧 GENERAL
+# ================================
+*.log
+*.tmp
+*.pid
+*.sock
+*.dat
+*.sqlite3
+*.db
+.DS_Store
+Thumbs.db
+
+# ================================
+# 🐍 PYTHON / FASTAPI
+# ================================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+env/
+venv/
+.venv/
+.env
+.env.local
+core/__pycache__/
+core/*.pyc
+
+# ================================
+# ⚛️ NEXT.JS / NODE.JS FRONTEND
+# ================================
 # Ignorar node_modules (archivos de dependencias)
 node_modules/
 
@@ -5,15 +36,8 @@ node_modules/
 npm-cache/
 .npm/
 
-# Ignorar archivos de log
-*.log
-
 # Ignorar cache de Yarn
 .yarn-cache/
-
-# Ignorar archivos generados por IDEs
-.idea/
-.vscode/
 
 # Ignorar caché de npm en front-base (si aplica)
 front-base/npm-cache/
@@ -23,3 +47,30 @@ front-base/*.log
 
 # Ignorar node_modules dentro de front-base (si necesario)
 front-base/node_modules/
+
+# Ignorar archivos generados por Next.js
+.next/
+dist/
+out/
+
+# ================================
+# 🐋 DOCKER
+# ================================
+*.pid
+*.sock
+*.tmp
+docker-compose.override.yml
+
+# ================================
+# 💻 IDEs / EDITORES
+# ================================
+.idea/
+.vscode/
+.vscode/*
+*.code-workspace
+
+# ================================
+# 🪟 WINDOWS / SISTEMA
+# ================================
+UsersASUSAppDataLocalnpm-cache/
+desktop.ini

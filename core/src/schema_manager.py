@@ -4,6 +4,7 @@ import json
 from src.record import RecordSchema
 from src.dbms.file_manager import FileManager
 from src.dbms.sequential import SequentialFile
+from src.dbms.sequential_index import SequentialIndex
 from src.dbms.isam import ISAMIndex
 from src.dbms.extendible_hash import ExtendibleHash
 from src.dbms.bplustree import BPlusTree
@@ -45,8 +46,8 @@ class SchemaManager:
 
             indexes = {}
             for col in meta.get("indexes", []):
-                # Si quieres más detalle de qué tipo de índice era, debes guardarlo en JSON
-                indexes[col] = SequentialFile(tname, col)
+                # Cargamos un índice simple por igualdad (persistente JSON)
+                indexes[col] = ExtendibleHash(tname, col, self.data_dir)
 
             self.tables[tname] = {
                 "schema": schema,
@@ -68,13 +69,9 @@ class SchemaManager:
         if index_map:
             for col, idx_type in index_map.items():
                 if idx_type == "sequential":
-                    indexes[col] = SequentialFile(table_name, col)
-                elif idx_type == "isam":
-                    indexes[col] = ISAMIndex(table_name, col)
-                elif idx_type == "hash":
-                    indexes[col] = ExtendibleHash(table_name, col)
-                elif idx_type == "btree":
-                    indexes[col] = BPlusTree(table_name, col)
+                    indexes[col] = SequentialIndex(table_name, col, self.data_dir)
+                elif idx_type in ("hash", "btree", "isam"):
+                    indexes[col] = ExtendibleHash(table_name, col, self.data_dir)
                 elif idx_type == "rtree":
                     indexes[col] = RTree(table_name, col)
 
@@ -115,7 +112,9 @@ class SchemaManager:
             if key is not None:
                 if isinstance(key, str):
                     key = key.strip().strip("'\"")
-                index.add(key, offset)
+                # Índice simple almacena offset del .dat
+                if hasattr(index, "add"):
+                    index.add(key, offset)
 
         return {"success": True, "message": f"Registro insertado en {table_name}", "offset": offset}
 
@@ -126,36 +125,102 @@ class SchemaManager:
         table = self.tables[table_name]
         schema, file_manager, indexes = table["schema"], table["file"], table["indexes"]
 
-        # Recuperar todos los registros
-        results = []
-        all_records = file_manager.scan_all()
+        # Intento: si hay condición simple col = value y existe índice, usarlo
+        eq_col, eq_val = self._parse_simple_equality(condition) if condition else (None, None)
+        if eq_col and eq_col in indexes and hasattr(indexes[eq_col], "find"):
+            offsets = indexes[eq_col].find(eq_val)
+            results = []
+            for off in offsets:
+                rec = file_manager.read_record(off)
+                if not rec:
+                    continue
+                rec_dict = rec if isinstance(rec, dict) else {
+                    schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))
+                }
+                if columns and columns != ["*"]:
+                    projected = {col: rec_dict.get(col) for col in columns}
+                    results.append(projected)
+                else:
+                    results.append(rec_dict)
+                if limit is not None and len(results) >= limit:
+                    break
+            return results
 
-        for rec in all_records:
-            # Normalizar en dict
+        # Rango: si la condición es BETWEEN en la misma columna con índice secuencial
+        if condition and isinstance(condition, str) and "between" in condition.lower():
+            try:
+                parts = condition.lower().split()
+                # form: col between a and b
+                col = parts[0]
+                if col in indexes and hasattr(indexes[col], "range_search"):
+                    a = parts[2].strip("'\"")
+                    b = parts[4].strip("'\"")
+                    offsets = indexes[col].range_search(a, b)
+                    results = []
+                    for off in offsets:
+                        rec = file_manager.read_record(off)
+                        if not rec:
+                            continue
+                        rec_dict = rec if isinstance(rec, dict) else {
+                            schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))
+                        }
+                        if columns and columns != ["*"]:
+                            projected = {c: rec_dict.get(c) for c in columns}
+                            results.append(projected)
+                        else:
+                            results.append(rec_dict)
+                        if limit is not None and len(results) >= limit:
+                            break
+                    return results
+            except Exception as e:
+                print(f"[WARN] BETWEEN parsing failed: {e}")
+
+        # Fallback: full scan
+        results = []
+        for rec in file_manager.scan_all():
             rec_dict = rec if isinstance(rec, dict) else {
                 schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))
             }
-
-            # Evaluar condición si existe
-            if condition:
+            if isinstance(condition, str) and condition.strip():
                 try:
-                    if not eval(condition.replace("=", "=="), {}, rec_dict):
-                        continue
+                    # Evaluar condición con conversión de tipos
+                    if "=" in condition:
+                        parts = condition.split("=", 1)
+                        col = parts[0].strip()
+                        val = parts[1].strip().strip("'\"")
+                        
+                        # Comparar con conversión de tipos
+                        record_val = rec_dict.get(col)
+                        if record_val is not None:
+                            # Intentar comparación numérica si ambos son números
+                            try:
+                                if str(record_val).isdigit() and val.isdigit():
+                                    if int(record_val) != int(val):
+                                        continue
+                                elif str(record_val).replace('.', '').isdigit() and val.replace('.', '').isdigit():
+                                    if float(record_val) != float(val):
+                                        continue
+                                elif str(record_val) != val:
+                                    continue
+                            except:
+                                if str(record_val) != val:
+                                    continue
+                        else:
+                            continue
+                    else:
+                        # Fallback a eval para condiciones complejas
+                        if not eval(condition.replace("=", "=="), {}, rec_dict):
+                            continue
                 except Exception as e:
                     print(f"Error evaluando condición: {e}")
                     continue
-
-            # Proyección de columnas
             if columns and columns != ["*"]:
                 projected = {col: rec_dict.get(col) for col in columns}
                 results.append(projected)
             else:
                 results.append(rec_dict)
-
-            # Aplicar LIMIT temprano para eficiencia
             if limit is not None and len(results) >= limit:
                 break
-
         return results
 
     # ---------------------------
@@ -184,13 +249,23 @@ class SchemaManager:
             raise ValueError(f"La columna {column} no existe en la tabla {table_name}")
 
         if index_type == "sequential":
-            idx = SequentialFile(table_name, column)
-        elif index_type == "isam":
-            idx = ISAMIndex(table_name, column)
-        elif index_type == "hash":
-            idx = ExtendibleHash(table_name, column)
-        elif index_type == "btree":
-            idx = BPlusTree(table_name, column)
+            idx = SequentialIndex(table_name, column, self.data_dir)
+            # Construir índices desde el archivo actual
+            for off, rec in self._iter_with_offsets(table_name):
+                key = rec.get(column)
+                if key is not None:
+                    if isinstance(key, str):
+                        key = key.strip().strip("'\"")
+                    idx.add(key, off)
+        elif index_type in ("hash", "btree", "isam"):
+            idx = ExtendibleHash(table_name, column, self.data_dir)
+            idx.clear()
+            for off, rec in self._iter_with_offsets(table_name):
+                key = rec.get(column)
+                if key is not None:
+                    if isinstance(key, str):
+                        key = key.strip().strip("'\"")
+                    idx.add(key, off)
         elif index_type == "rtree":
             idx = RTree(table_name, column)
         else:
@@ -212,8 +287,36 @@ class SchemaManager:
                     }
 
                     # Evaluar condición de forma segura
-                    if eval(condition.replace("=", "=="), {}, rec_dict):
+                    if not isinstance(condition, str) or not condition.strip():
                         results.append(rec_dict)
+                    else:
+                        # Evaluar condición con conversión de tipos
+                        try:
+                            # Parsear condición simple: col = value
+                            if "=" in condition:
+                                parts = condition.split("=", 1)
+                                col = parts[0].strip()
+                                val = parts[1].strip().strip("'\"")
+                                
+                                # Comparar con conversión de tipos
+                                record_val = rec_dict.get(col)
+                                if record_val is not None:
+                                    # Intentar comparación numérica si ambos son números
+                                    try:
+                                        if str(record_val).isdigit() and val.isdigit():
+                                            if int(record_val) == int(val):
+                                                results.append(rec_dict)
+                                        elif str(record_val).replace('.', '').isdigit() and val.replace('.', '').isdigit():
+                                            if float(record_val) == float(val):
+                                                results.append(rec_dict)
+                                        elif str(record_val) == val:
+                                            results.append(rec_dict)
+                                    except:
+                                        if str(record_val) == val:
+                                            results.append(rec_dict)
+                        except Exception as e:
+                            print(f"Error evaluando condición: {e}")
+                            continue
 
                     # Limitar resultados
                     if limit and len(results) >= limit:
@@ -223,3 +326,35 @@ class SchemaManager:
                     continue
 
             return results
+
+    def _iter_with_offsets(self, table_name):
+        """Itera registros devolviendo (offset, dict)."""
+        table = self.tables[table_name]
+        schema, file_manager = table["schema"], table["file"]
+        with open(file_manager.filename, "rb") as f:
+            offset = 0
+            while True:
+                binary = f.read(schema.size)
+                if not binary or len(binary) < schema.size:
+                    break
+                if binary.strip(b"\x00") == b"":
+                    offset += schema.size
+                    continue
+                rec = schema.unpack(binary)
+                yield offset, (rec if isinstance(rec, dict) else {schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))})
+                offset += schema.size
+
+    def _parse_simple_equality(self, condition):
+        try:
+            # forma: "col == value" o "col = value"
+            if condition is None:
+                return None, None
+            c = condition.replace("==", "=")
+            if "=" not in c:
+                return None, None
+            left, right = c.split("=", 1)
+            col = left.strip()
+            val = right.strip().strip("'\"")
+            return col, val
+        except Exception:
+            return None, None

@@ -32,23 +32,46 @@ class Executor:
             return self.schema_manager.delete(ast["table"], ast["condition"])
 
         elif op == "select":
-            if use_index:
-                # Ejecutar la consulta con el índice
-                return self.schema_manager.select(
-                    ast["table"],
+            table_name = ast["table"]
+            has_any_index = False
+            try:
+                tbl = self.schema_manager.tables.get(table_name)
+                if tbl and tbl.get("indexes"):
+                    has_any_index = len(tbl["indexes"]) > 0
+            except Exception:
+                has_any_index = False
+
+            if use_index and has_any_index:
+                # Intentar usar índice real (SchemaManager.select usa índice si aplica)
+                rows = self.schema_manager.select(
+                    table_name,
                     ast["columns"],
-                    ast["condition"],
+                    ast.get("condition"),
                     index=ast.get("index"),
                     limit=ast.get("limit")
                 )
-            else:
-                # Ejecutar la consulta directamente sobre el archivo `.dat` (sin índice)
-                return self.schema_manager.select_without_index(
-                    ast["table"],
+                # Detectar si realmente aplicó índice: parseo sencillo y consulta rápida
+                eq_col, _ = self.schema_manager._parse_simple_equality(ast.get("condition")) if ast.get("condition") else (None, None)
+                used = bool(eq_col and self.schema_manager.tables.get(table_name, {}).get("indexes", {}).get(eq_col))
+                warning = None if used else f"No index available for column '{eq_col}' in condition"
+                return {"result": rows, "used_index": used, "index_warning": warning}
+            elif use_index and not has_any_index:
+                # No hay índices disponibles, ejecutar sin índice pero con advertencia
+                rows = self.schema_manager.select_without_index(
+                    table_name,
                     ast["columns"],
                     ast["condition"],
                     limit=ast.get("limit")
                 )
+                return {"result": rows, "used_index": False, "index_warning": f"No indexes available for table '{table_name}'"}
+            else:
+                rows = self.schema_manager.select_without_index(
+                    table_name,
+                    ast["columns"],
+                    ast["condition"],
+                    limit=ast.get("limit")
+                )
+                return {"result": rows, "used_index": False, "index_warning": None}
 
         elif op == "create_index":
             # Crear un índice en una columna de una tabla

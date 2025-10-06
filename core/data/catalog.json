@@ -63,7 +63,8 @@
       }
     ],
     "indexes": [
-      "common_name"
+      "common_name",
+      "observation_id"
     ]
   }
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -91,6 +91,91 @@ const handleExecuteQueryWithoutIndex = async () => {
     toast.info("Example query loaded")
   }
 
+  // Ejecutar ambas variantes y persistir en localStorage para otras vistas
+  const handleExecuteBoth = async () => {
+    setLoading(true)
+    try {
+      // Ejecutar SIN índice primero (backend mide tiempo)
+      const resNoIdx = await fetch("http://localhost:8000/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, use_index: false }),
+      })
+      const dataNoIdx = await resNoIdx.json()
+      if (!dataNoIdx.ok) throw new Error(dataNoIdx.error || "Query without index failed")
+
+      // Ejecutar CON índice
+      const resIdx = await fetch("http://localhost:8000/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query, use_index: true }),
+      })
+      const dataIdx = await resIdx.json()
+      if (!dataIdx.ok) throw new Error(dataIdx.error || "Query with index failed")
+
+      const timeWithout = Number(dataNoIdx.execution_time) * 1000
+      const timeWith = Number(dataIdx.execution_time) * 1000
+
+      setExecutionTimeWithoutIndex(timeWithout)
+      setExecutionTimeWithIndex(timeWith)
+      setResultsWithoutIndex(Array.isArray(dataNoIdx.result) ? dataNoIdx.result : [])
+      setResultsWithIndex(Array.isArray(dataIdx.result) ? dataIdx.result : [])
+      
+      // Debug: mostrar resultados en consola
+      console.log("Results without index:", dataNoIdx.result)
+      console.log("Results with index:", dataIdx.result)
+      console.log("Used index:", dataIdx.used_index)
+      console.log("Index warning:", dataIdx.index_warning)
+      
+      // Mostrar advertencias si existen
+      if (dataIdx.index_warning) {
+        toast.warning("Index Warning", { description: dataIdx.index_warning })
+      }
+
+      // Persistir en localStorage
+      const last = {
+        query,
+        timeWithIndexMs: Number(timeWith.toFixed(2)),
+        timeWithoutIndexMs: Number(timeWithout.toFixed(2)),
+        usedIndexOnSecond: Boolean(dataIdx.used_index),
+        timestamp: Date.now(),
+      }
+      localStorage.setItem("db_performance_last", JSON.stringify(last))
+
+      // Historial acumulado
+      const key = "db_performance_history"
+      const prevRaw = localStorage.getItem(key)
+      const prev = prevRaw ? JSON.parse(prevRaw) : []
+      prev.push(last)
+      localStorage.setItem(key, JSON.stringify(prev.slice(-20))) // mantener últimos 20
+
+      const labelUsed = last.usedIndexOnSecond ? "index" : "no-index"
+      const resultCount = Array.isArray(dataIdx.result) ? dataIdx.result.length : 0
+      toast.success("Executed both variants", { description: `with(${labelUsed}): ${last.timeWithIndexMs}ms, without: ${last.timeWithoutIndexMs}ms, results: ${resultCount}` })
+    } catch (err: any) {
+      toast.error("Execution failed", { description: err.message })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Restaurar último query ejecutado
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("db_performance_last_query")
+      if (raw) setQuery(raw)
+    } catch {}
+  }, [])
+  
+  // Guardar query en localStorage cada vez que cambie
+  useEffect(() => {
+    if (query.trim()) {
+      try { 
+        localStorage.setItem("db_performance_last_query", query) 
+      } catch {}
+    }
+  }, [query])
+
   return (
     <div className="p-8 space-y-8">
       {/* Header */}
@@ -117,20 +202,12 @@ const handleExecuteQueryWithoutIndex = async () => {
           <div className="flex items-center justify-between">
             <div className="flex gap-2">
               <Button
-                onClick={handleExecuteQueryWithIndex}
+                onClick={handleExecuteBoth}
                 disabled={loading}
                 className="gap-2 hover:scale-105 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300 bg-gradient-to-r from-primary to-primary/90"
               >
                 <Play className="h-4 w-4" />
-                {loading ? "Running..." : "Execute Query With Index"}
-              </Button>
-              <Button
-                onClick={handleExecuteQueryWithoutIndex}
-                disabled={loading}
-                className="gap-2 hover:scale-105 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300 bg-gradient-to-r from-primary to-primary/90"
-              >
-                <Play className="h-4 w-4" />
-                {loading ? "Running..." : "Execute Query Without Index"}
+                {loading ? "Running..." : "Execute (With & Without Index)"}
               </Button>
             </div>
             {(executionTimeWithIndex || executionTimeWithoutIndex) && (
@@ -171,23 +248,28 @@ const handleExecuteQueryWithoutIndex = async () => {
       </Card>
 
       {/* Results */}
-      {resultsWithIndex && Array.isArray(resultsWithIndex) && resultsWithIndex.length > 0 && (
+      {(resultsWithIndex && Array.isArray(resultsWithIndex) && resultsWithIndex.length > 0) || 
+       (resultsWithoutIndex && Array.isArray(resultsWithoutIndex) && resultsWithoutIndex.length > 0) ? (
         <Card className="glass-card border-white/10 animate-scale-in hover:shadow-xl hover:shadow-primary/5 transition-all duration-300">
           <CardHeader>
-            <CardTitle>Results With Index</CardTitle>
-            <CardDescription>{resultsWithIndex.length} rows returned</CardDescription>
+            <CardTitle>Query Results</CardTitle>
+            <CardDescription>
+              {resultsWithIndex?.length || resultsWithoutIndex?.length || 0} rows returned
+              {resultsWithIndex?.length === resultsWithoutIndex?.length && (resultsWithIndex?.length || 0) > 0 && 
+                " (same results for both executions)"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  {Object.keys(resultsWithIndex[0]).map((col, i) => (
+                  {Object.keys((resultsWithIndex && resultsWithIndex[0]) || (resultsWithoutIndex && resultsWithoutIndex[0]) || {}).map((col, i) => (
                     <TableHead key={i}>{col}</TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {resultsWithIndex.map((row, idx) => (
+                {(resultsWithIndex || resultsWithoutIndex || []).map((row, idx) => (
                   <TableRow key={idx}>
                     {Object.values(row).map((val, i) => (
                       <TableCell key={i}>{String(val)}</TableCell>
@@ -198,36 +280,7 @@ const handleExecuteQueryWithoutIndex = async () => {
             </Table>
           </CardContent>
         </Card>
-      )}
-
-      {resultsWithoutIndex && Array.isArray(resultsWithoutIndex) && resultsWithoutIndex.length > 0 && (
-        <Card className="glass-card border-white/10 animate-scale-in hover:shadow-xl hover:shadow-primary/5 transition-all duration-300">
-          <CardHeader>
-            <CardTitle>Results Without Index</CardTitle>
-            <CardDescription>{resultsWithoutIndex.length} rows returned</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {Object.keys(resultsWithoutIndex[0]).map((col, i) => (
-                    <TableHead key={i}>{col}</TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {resultsWithoutIndex.map((row, idx) => (
-                  <TableRow key={idx}>
-                    {Object.values(row).map((val, i) => (
-                      <TableCell key={i}>{String(val)}</TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+      ) : null}
     </div>
   )
 }

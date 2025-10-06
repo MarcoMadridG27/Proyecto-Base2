@@ -11,6 +11,8 @@ const navigation = [
   { name: "SQL Query", href: "/query", icon: Database },
   { name: "Index Explorer", href: "/indexes", icon: Network },
   { name: "Spatial Results", href: "/spatial", icon: Map },
+  { name: "Sequential Viz", href: "/sequential", icon: Database },
+  { name: "Index Operations", href: "/operations", icon: Network },
 ]
 
 export function Sidebar() {

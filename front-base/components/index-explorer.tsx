@@ -19,26 +19,26 @@ const indexTypes = [
   { id: "rtree", name: "R-Tree", icon: MapPin, description: "Spatial indexing for geographic data", complexity: "O(log n)", color: "text-pink-400" },
 ]
 
-export function IndexExplorer({ defaultTable }: { defaultTable: string }) {
+export function IndexExplorer({ defaultTable }: { defaultTable?: string }) {
   const [selectedIndex, setSelectedIndex] = useState("sequential")
   const [loadingIndex, setLoadingIndex] = useState<string | null>(null)
-  const [tableName, setTableName] = useState(defaultTable)
+  const [tableName, setTableName] = useState(defaultTable || "")
   const [columnName, setColumnName] = useState("")
   const [columns, setColumns] = useState<string[]>([]) // Añadido para las columnas
   const [tableExists, setTableExists] = useState(false) // Verifica si la tabla existe
 
   const [performanceData, setPerformanceData] = useState({
-    labels: ["Query 1"],
+    labels: [] as string[],
     datasets: [
       {
         label: "Without Index",
-        data: [0],
+        data: [] as number[],
         borderColor: "rgba(75, 192, 192, 1)",
         backgroundColor: "rgba(75, 192, 192, 0.2)",
       },
       {
         label: "With Index",
-        data: [0],
+        data: [] as number[],
         borderColor: "rgba(153, 102, 255, 1)",
         backgroundColor: "rgba(153, 102, 255, 0.2)",
       },
@@ -90,11 +90,10 @@ export function IndexExplorer({ defaultTable }: { defaultTable: string }) {
 
     setLoadingIndex(indexType)
     try {
-      const query = `CREATE INDEX ${indexType} ON ${tableName} (${columnName})`
-      const res = await fetch("http://localhost:8000/query", {
+      const res = await fetch("http://localhost:8000/create_index", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ index_type: indexType, table_name: tableName, column: columnName }),
       })
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -114,63 +113,38 @@ export function IndexExplorer({ defaultTable }: { defaultTable: string }) {
     }
   }
 
-  // Función para ejecutar la consulta y actualizar los datos del gráfico de rendimiento
-  const executeQueryAndUpdatePerformance = async () => {
-    if (!tableName || !columnName) {
-      toast.error("Please provide both table and column names")
-      return
-    }
-
+  // Cargar datos de performance desde localStorage y graficar
+  const loadPerformanceFromStorage = () => {
     try {
-      const query = `SELECT * FROM ${tableName} WHERE ${columnName} IS NOT NULL LIMIT 10`  // Consulta ejemplo
-
-      // Ejecutar la consulta sin índices
-      const startTimeNoIndex = performance.now()
-      const resNoIndex = await fetch("http://localhost:8000/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
-      })
-      const dataNoIndex = await resNoIndex.json()
-      const endTimeNoIndex = performance.now()
-      const timeNoIndex = (endTimeNoIndex - startTimeNoIndex).toFixed(2)
-
-      // Ejecutar la consulta con índices
-      const startTimeWithIndex = performance.now()
-      const resWithIndex = await fetch("http://localhost:8000/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
-      })
-      const dataWithIndex = await resWithIndex.json()
-      const endTimeWithIndex = performance.now()
-      const timeWithIndex = (endTimeWithIndex - startTimeWithIndex).toFixed(2)
-
-      // Actualizar los datos de rendimiento
+      const raw = localStorage.getItem("db_performance_history")
+      const history = raw ? JSON.parse(raw) : []
+      if (!Array.isArray(history) || history.length === 0) {
+        toast.info("Run a query in SQL Query tab first")
+        return
+      }
+      const labels = history.map((h: any, i: number) => `Run ${i + 1}`)
+      const withoutIdx = history.map((h: any) => Number(h.timeWithoutIndexMs || 0))
+      const withIdx = history.map((h: any) => Number(h.timeWithIndexMs || 0))
       setPerformanceData({
-        labels: ["Query 1"],  // Solo un query por ahora
+        labels,
         datasets: [
-          {
-            label: "Without Index",
-            data: [parseFloat(timeNoIndex)],
-            borderColor: "rgba(75, 192, 192, 1)",
-            backgroundColor: "rgba(75, 192, 192, 0.2)",
-          },
-          {
-            label: "With Index",
-            data: [parseFloat(timeWithIndex)],
-            borderColor: "rgba(153, 102, 255, 1)",
-            backgroundColor: "rgba(153, 102, 255, 0.2)",
-          },
+          { label: "Without Index", data: withoutIdx, borderColor: "rgba(75, 192, 192, 1)", backgroundColor: "rgba(75, 192, 192, 0.2)" },
+          { label: "With Index", data: withIdx, borderColor: "rgba(153, 102, 255, 1)", backgroundColor: "rgba(153, 102, 255, 0.2)" },
         ],
       })
-      toast.success("Query executed and performance data updated")
-
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred";
-      toast.error("Error executing query or fetching performance data", { description: errorMessage });
+      toast.success("Loaded performance history")
+    } catch (e:any) {
+      toast.error("Failed to load performance data", { description: e.message })
     }
   }
+
+  // Cargar automáticamente si existe historial
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("db_performance_history")
+      if (raw) loadPerformanceFromStorage()
+    } catch {}
+  }, [])
 
   return (
     <div className="p-8 space-y-8">
@@ -257,8 +231,8 @@ export function IndexExplorer({ defaultTable }: { defaultTable: string }) {
           <CardDescription>Compare query performance with and without indices</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button onClick={executeQueryAndUpdatePerformance} className="w-full bg-gradient-to-r from-primary to-primary/90">
-            Execute Query and Show Performance
+          <Button onClick={loadPerformanceFromStorage} className="w-full bg-gradient-to-r from-primary to-primary/90">
+            Load Last Query Performance
           </Button>
           <Line data={performanceData} />
         </CardContent>

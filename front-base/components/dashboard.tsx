@@ -1,51 +1,77 @@
 "use client"
 
 import { cn } from "@/lib/utils"
+import { useEffect, useState } from "react"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Database, FileText, Search, Map, TrendingUp, Clock } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
-const stats = [
-  {
-    title: "Total Records",
-    value: "1,234,567",
-    change: "+12.5%",
-    icon: Database,
-    color: "text-primary",
-  },
-  {
-    title: "Files Uploaded",
-    value: "89",
-    change: "+3",
-    icon: FileText,
-    color: "text-secondary",
-  },
-  {
-    title: "Queries Executed",
-    value: "456",
-    change: "+23",
-    icon: Search,
-    color: "text-blue-400",
-  },
-  {
-    title: "Spatial Points",
-    value: "12,345",
-    change: "+156",
-    icon: Map,
-    color: "text-emerald-400",
-  },
-]
-
-const recentActivity = [
-  { action: "CSV file uploaded", file: "customers.csv", time: "2 minutes ago" },
-  { action: "SQL query executed", file: "SELECT * FROM users", time: "15 minutes ago" },
-  { action: "Index created", file: "B+ Tree on user_id", time: "1 hour ago" },
-  { action: "Spatial search", file: "Lima region query", time: "2 hours ago" },
-]
+type SystemStats = {
+  total_records: number
+  total_tables: number
+  total_indexes: number
+  tables: string[]
+}
 
 export function Dashboard() {
+  const [stats, setStats] = useState<SystemStats | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/system_stats")
+        const data = await res.json()
+        if (data.ok) {
+          setStats(data.stats)
+        }
+      } catch (err) {
+        console.error("Failed to fetch stats:", err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchStats()
+  }, [])
+
+  const statsCards = [
+    {
+      title: "Total Records",
+      value: stats ? stats.total_records.toLocaleString() : "Loading...",
+      change: "+0%",
+      icon: Database,
+      color: "text-primary",
+    },
+    {
+      title: "Tables",
+      value: stats ? stats.total_tables.toString() : "Loading...",
+      change: "+0",
+      icon: FileText,
+      color: "text-secondary",
+    },
+    {
+      title: "Indexes",
+      value: stats ? stats.total_indexes.toString() : "Loading...",
+      icon: Search,
+      color: "text-blue-400",
+    },
+    {
+      title: "Active Tables",
+      value: stats ? stats.tables.length.toString() : "Loading...",
+      change: stats ? stats.tables.join(", ") : "",
+      icon: Map,
+      color: "text-emerald-400",
+    },
+  ]
+
+  const recentActivity = [
+    { action: "System initialized", file: "Backend connected", time: "Just now" },
+    { action: "Tables loaded", file: stats ? stats.tables.join(", ") : "Loading...", time: "Just now" },
+    { action: "Indexes ready", file: stats ? `${stats.total_indexes} indexes` : "Loading...", time: "Just now" },
+    { action: "Database ready", file: "All systems operational", time: "Just now" },
+  ]
   return (
     <div className="p-8 space-y-8">
       {/* Header */}
@@ -58,7 +84,7 @@ export function Dashboard() {
 
       {/* Stats Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat, index) => (
+        {statsCards.map((stat, index) => (
           <Card
             key={stat.title}
             className={cn(

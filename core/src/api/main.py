@@ -8,6 +8,7 @@ import csv
 import time
 
 from src.parser.executor import Executor
+from src.schema_manager import SchemaManager
 
 # Inicializamos Executor
 executor = Executor(data_dir="data")
@@ -56,14 +57,24 @@ def run_query(request: QueryRequest):
         
         # Ejecutar la consulta con o sin índice
         start_time = time.time()
-        result = executor.execute(request.query, use_index=use_index)  # Ejecutar según el parámetro use_index
+        result = executor.execute(request.query, use_index=use_index)
         execution_time = time.time() - start_time
 
-        return {
-            "ok": True,
-            "result": result,
-            "execution_time": execution_time
-        }
+        # Normalizar salida de SELECT vs otras operaciones
+        if isinstance(result, dict) and "result" in result and "used_index" in result:
+            return {
+                "ok": True,
+                "result": result["result"],
+                "used_index": result["used_index"],
+                "index_warning": result.get("index_warning"),
+                "execution_time": execution_time,
+            }
+        else:
+            return {
+                "ok": True,
+                "result": result,
+                "execution_time": execution_time
+            }
 
     except Exception as e:
         print(f"Error: {str(e)}")  # Debug
@@ -161,9 +172,69 @@ def create_index(request: IndexRequest):
     """
     try:
         # Asegúrate de que el cuerpo de la petición tenga un parámetro 'column' que indique la columna en la que se crea el índice
-        query = f"CREATE INDEX {request.index_type.upper()} ON {request.table_name} ({request.column})"
-        
+        idx_type = request.index_type.lower()
+        if idx_type not in ("sequential",):
+            return {"ok": False, "error": f"Index type '{request.index_type}' not implemented yet. Available: sequential"}
+        query = f"CREATE INDEX {idx_type} ON {request.table_name} ({request.column})"
+
         result = executor.execute(query)
-        return {"ok": True, "message": f"{request.index_type} index created on {request.table_name} column {request.column}", "result": result}
+        return {"ok": True, "message": f"{idx_type} index created on {request.table_name} column {request.column}", "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+# -------------------------------
+# Esquema/Metadatos
+# -------------------------------
+@app.get("/get_table_columns")
+def get_table_columns(table_name: str):
+    try:
+        if table_name not in executor.schema_manager.tables:
+            return {"ok": False, "error": f"Tabla '{table_name}' no existe"}
+
+        table_info = executor.schema_manager.tables[table_name]
+        columns_meta = table_info["schema"].columns  # lista de dicts { name, type }
+        column_names = [c.get("name") for c in columns_meta]
+        return {"ok": True, "columns": column_names}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@app.get("/sequential_index_info")
+def sequential_index_info(table_name: str, column: str):
+    try:
+        if table_name not in executor.schema_manager.tables:
+            return {"ok": False, "error": f"Tabla '{table_name}' no existe"}
+        idx = executor.schema_manager.tables[table_name]["indexes"].get(column)
+        if not idx or not hasattr(idx, "info"):
+            return {"ok": False, "error": "No sequential index for given table/column"}
+        return {"ok": True, "info": idx.info()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@app.get("/system_stats")
+def system_stats():
+    try:
+        total_records = 0
+        total_tables = len(executor.schema_manager.tables)
+        total_indexes = 0
+        
+        for table_name, table_info in executor.schema_manager.tables.items():
+            # Count records in each table
+            try:
+                records = table_info["file"].scan_all()
+                total_records += len(records)
+            except:
+                pass
+            # Count indexes
+            total_indexes += len(table_info["indexes"])
+        
+        return {
+            "ok": True,
+            "stats": {
+                "total_records": total_records,
+                "total_tables": total_tables,
+                "total_indexes": total_indexes,
+                "tables": list(executor.schema_manager.tables.keys())
+            }
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}
