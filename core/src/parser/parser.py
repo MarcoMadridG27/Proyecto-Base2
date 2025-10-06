@@ -1,11 +1,19 @@
 # parser/parser.py
-from src.parser.lexer import tokenize  
+from src.parser.lexer import tokenize
 
 class SQLParser:
     def parse(self, query: str):
         tokens = [t[1].lower() if t[0] in ("IDENT", "OP") else t[1] for t in tokenize(query)]
+        
         if tokens[0] == "create":
-            return self._parse_create(tokens)
+            # Diferenciar CREATE TABLE vs CREATE INDEX
+            if tokens[1] == "table":
+                return self._parse_create(tokens)
+            elif tokens[1] == "index":
+                return self._parse_create_index(tokens)
+            else:
+                raise ValueError("CREATE soporta TABLE o INDEX")
+        
         elif tokens[0] == "insert":
             return self._parse_insert(tokens)
         elif tokens[0] == "delete":
@@ -32,31 +40,38 @@ class SQLParser:
         else:
             raise ValueError("CREATE TABLE debe definir columnas")
 
-
-        # Parsear columnas
+        # Parsear columnas y los índices asociados
         columns, index_map = [], {}
         i = 0
         valid_types = {"INT", "FLOAT", "DATE", "VARCHAR", "CHAR"}
         while i < len(cols_tokens):
-                if i+1 >= len(cols_tokens):
-                    break
-                name = cols_tokens[i]
-                ctype = cols_tokens[i+1].upper()
-                
-                # Normalizar VARCHAR sin tamaño a VARCHAR[100]
-                if ctype == "VARCHAR" and i+2 < len(cols_tokens) and not cols_tokens[i+2].startswith("["):
-                    ctype = "VARCHAR[100]"
-                
-                if ctype not in valid_types and not ctype.startswith("VARCHAR["):
-                    ctype = "VARCHAR[100]"
-                    
-                col_def = {"name": name, "type": ctype}
-                i += 2
-                
-                # Si el siguiente token es tamaño [20], lo agregamos al tipo
-                if i < len(cols_tokens) and cols_tokens[i].startswith("["):
-                    ctype += cols_tokens[i]
-                    i += 1
+            if i+1 >= len(cols_tokens):
+                break
+            name = cols_tokens[i]
+            ctype = cols_tokens[i+1].upper()
+
+            # Normalizar VARCHAR sin tamaño a VARCHAR[100]
+            if ctype == "VARCHAR" and i+2 < len(cols_tokens) and not cols_tokens[i+2].startswith("["):
+                ctype = "VARCHAR[100]"
+            
+            if ctype not in valid_types and not ctype.startswith("VARCHAR["):
+                ctype = "VARCHAR[100]"
+            
+            col_def = {"name": name, "type": ctype}
+            i += 2
+
+            # Si el siguiente token es tamaño [20], lo agregamos al tipo
+            if i < len(cols_tokens) and cols_tokens[i].startswith("["):
+                ctype += cols_tokens[i]
+                i += 1
+
+            columns.append(col_def)
+
+            # Verificar si existe la palabra clave "index" para aplicar un índice
+            if i < len(cols_tokens) and cols_tokens[i].startswith("index"):
+                index_type = cols_tokens[i + 1].lower()
+                index_map[name] = index_type
+                i += 2  # Avanzar para saltar "index" y el tipo de índice
 
         return {
             "operation": "create",
@@ -89,16 +104,18 @@ class SQLParser:
         }
 
     def _parse_select(self, tokens):
-
+        # SELECT col FROM table WHERE cond [USING <index>]
         from_index = tokens.index("from")
         raw_columns = tokens[1:from_index]
-
+        
+        # Parse columns
         columns = [c.strip(",") for c in raw_columns if c != ","]
-
+        
         table = tokens[from_index + 1]
-
+        
         condition, index, limit = None, None, None
 
+        # Procesar condición WHERE
         if "where" in tokens:
             where_index = tokens.index("where")
             end_idx = len(tokens)
@@ -108,15 +125,16 @@ class SQLParser:
                 end_idx = min(end_idx, tokens.index("limit"))
             condition = " ".join(tokens[where_index + 1:end_idx])
 
+        # Procesar índice USING
         if "using" in tokens:
             idx_index = tokens.index("using")
-            # hasta LIMIT o fin
             if "limit" in tokens:
                 end_idx = tokens.index("limit")
                 index = " ".join(tokens[idx_index + 1:end_idx])
             else:
                 index = tokens[idx_index + 1]
 
+        # Procesar LIMIT
         if "limit" in tokens:
             limit_index = tokens.index("limit")
             try:
@@ -133,7 +151,35 @@ class SQLParser:
             "limit": limit
         }
 
+    def _parse_create_index(self, tokens):
+        """
+        CREATE INDEX <tipo> ON <tabla> (columna)
+        Ejemplo:
+            CREATE INDEX btree ON empleados (id)
+        """
+        if len(tokens) < 6:
+            raise ValueError("Sintaxis: CREATE INDEX <tipo> ON <tabla> (columna)")
+        
+        index_type = tokens[2]
+        
+        if tokens[3] != "on":
+            raise ValueError("Sintaxis incorrecta, falta 'ON'")
+        
+        table = tokens[4]
 
+        if "(" not in tokens or ")" not in tokens:
+            raise ValueError("Sintaxis incorrecta, falta (columna)")
+        
+        open_paren = tokens.index("(")
+        close_paren = tokens.index(")")
+        column = tokens[open_paren+1:close_paren][0]
+
+        return {
+            "operation": "create_index",
+            "table": table,
+            "index_type": index_type,
+            "column": column
+        }
 
 if __name__ == "__main__":
     parser = SQLParser()

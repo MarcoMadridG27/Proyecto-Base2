@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import os
 import shutil
 import csv
+import time
 
 from src.parser.executor import Executor
 
@@ -31,10 +32,12 @@ app.add_middleware(
 # -------------------------------
 class QueryRequest(BaseModel):
     query: str
+    use_index: bool  # Se añade el parámetro use_index
 
 class IndexRequest(BaseModel):
     index_type: str
     table_name: str
+    column: str  # Asegurarse de que se reciba el nombre de la columna para crear el índice
 
 # -------------------------------
 # ENDPOINTS
@@ -45,12 +48,23 @@ def health():
 
 @app.post("/query")
 def run_query(request: QueryRequest):
+    use_index = request.use_index  # Recibe el parámetro use_index
     try:
-        print(f"Query recibida: {request.query}")  # Debug
-        result = executor.execute(request.query)
-        print(f"Resultado: {result}")  # Debug - VER ESTO
-        print(f"Tipo resultado: {type(result)}")  # Debug
-        return {"ok": True, "result": result}
+        print(f"Query recibida: {request.query} | Use Index: {use_index}")  # Debug
+        result = None
+        execution_time = None
+        
+        # Ejecutar la consulta con o sin índice
+        start_time = time.time()
+        result = executor.execute(request.query, use_index=use_index)  # Ejecutar según el parámetro use_index
+        execution_time = time.time() - start_time
+
+        return {
+            "ok": True,
+            "result": result,
+            "execution_time": execution_time
+        }
+
     except Exception as e:
         print(f"Error: {str(e)}")  # Debug
         import traceback
@@ -146,9 +160,10 @@ def create_index(request: IndexRequest):
     Crea un índice en la tabla especificada usando el motor DBMS.
     """
     try:
-        # Aquí decides cómo se traduce la petición a una consulta en tu motor
-        query = f"CREATE INDEX {request.index_type.upper()} ON {request.table_name}"
+        # Asegúrate de que el cuerpo de la petición tenga un parámetro 'column' que indique la columna en la que se crea el índice
+        query = f"CREATE INDEX {request.index_type.upper()} ON {request.table_name} ({request.column})"
+        
         result = executor.execute(query)
-        return {"ok": True, "message": f"{request.index_type} index created on {request.table_name}", "result": result}
+        return {"ok": True, "message": f"{request.index_type} index created on {request.table_name} column {request.column}", "result": result}
     except Exception as e:
         return {"ok": False, "error": str(e)}

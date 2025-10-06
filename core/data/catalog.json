@@ -62,6 +62,8 @@
         "type": "VARCHAR[100]"
       }
     ],
-    "indexes": []
+    "indexes": [
+      "common_name"
+    ]
   }
 }

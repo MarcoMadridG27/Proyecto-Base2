@@ -6,7 +6,9 @@
 # next.js
 /.next/
 /out/
-
+# Ignorar caché de npm
+npm-cache/
+.npm/
 # production
 /build
 

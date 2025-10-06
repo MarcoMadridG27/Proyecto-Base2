@@ -36,13 +36,15 @@ class SequentialFile:
             f.write(self.schema.pack(record))
 
     def insert_aux(self, record: dict):
+        """Insertar un registro en el archivo auxiliar"""
         size_aux = self.get_size(self.aux_file)
         if size_aux >= self.aux_limit:
-            self.reconstruct()
+            self.reconstruct()  # Reconstruir cuando el límite es alcanzado
         with open(self.aux_file, "ab") as aux:
             aux.write(self.schema.pack(record))
 
     def _insert_ordered(self, record: dict, key_name="id"):
+        """Insertar un registro en el archivo de forma ordenada"""
         size = self.get_size(self.file_name)
         left, right = 0, size - 1
         pos = size
@@ -74,6 +76,7 @@ class SequentialFile:
             f.write(self.schema.pack(record))
 
     def reconstruct(self, key_name="id"):
+        """Reconstruir el archivo a partir del archivo auxiliar"""
         with open(self.aux_file, "rb") as aux:
             while True:
                 data = aux.read(self.schema.size)
@@ -90,6 +93,7 @@ class SequentialFile:
         open(self.aux_file, "wb").close()
 
     def search(self, key, key_name="id"):
+        """Buscar un registro en el archivo secuencial y en el auxiliar"""
         left, right = 0, self.get_size(self.file_name) - 1
 
         while left <= right:
@@ -114,6 +118,7 @@ class SequentialFile:
         return None
 
     def remove(self, key, key_name="id"):
+        """Eliminar un registro por clave"""
         # Buscar en file principal
         left, right = 0, self.get_size(self.file_name) - 1
         with open(self.file_name, "r+b") as f:
@@ -125,7 +130,7 @@ class SequentialFile:
                     break
                 rec = self.schema.unpack(data)
                 if rec[key_name] == key:
-                    rec[key_name] = -1
+                    rec[key_name] = -1  # Marca como eliminado
                     f.seek(mid * self.schema.size)
                     f.write(self.schema.pack(rec))
                     return True
@@ -144,13 +149,14 @@ class SequentialFile:
                     continue
                 rec = self.schema.unpack(data)
                 if rec[key_name] == key:
-                    rec[key_name] = -1
+                    rec[key_name] = -1  # Marca como eliminado
                     f.seek(i * self.schema.size)
                     f.write(self.schema.pack(rec))
                     return True
         return False
 
     def range_search(self, init_id, end_id, key_name="id"):
+        """Buscar registros en un rango de claves"""
         results = []
         size = self.get_size(self.file_name)
 
@@ -196,5 +202,7 @@ class SequentialFile:
         return results
 
     def remove_all(self):
+        """Eliminar todos los registros en ambos archivos"""
         open(self.file_name, "wb").close()
         open(self.aux_file, "wb").close()
+

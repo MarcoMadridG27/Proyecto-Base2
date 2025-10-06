@@ -17,39 +17,74 @@ const queryExamples = [
 
 export function SQLQuery() {
   const [query, setQuery] = useState("SELECT * FROM users LIMIT 10")
-  const [results, setResults] = useState<any[] | null>(null)
-  const [executionTime, setExecutionTime] = useState<number | null>(null)
+  const [resultsWithIndex, setResultsWithIndex] = useState<any[] | null>(null)
+  const [resultsWithoutIndex, setResultsWithoutIndex] = useState<any[] | null>(null)
+  const [executionTimeWithIndex, setExecutionTimeWithIndex] = useState<number | null>(null)
+  const [executionTimeWithoutIndex, setExecutionTimeWithoutIndex] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
 
-  const handleExecuteQuery = async () => {
-    const startTime = performance.now()
-    setLoading(true)
+// Frontend: Cambio de las rutas a una sola consulta
+const handleExecuteQueryWithIndex = async () => {
+  const startTime = performance.now();
+  setLoading(true);
 
-    try {
-      const res = await fetch("http://localhost:8000/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
-      })
+  try {
+    const res = await fetch("http://localhost:8000/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, use_index: true }),  // Asegúrate de pasar el parámetro use_index
+    });
 
-      const data = await res.json()
-      const endTime = performance.now()
-      setExecutionTime(endTime - startTime)
+    const data = await res.json();
+    const endTime = performance.now();
+    setExecutionTimeWithIndex(endTime - startTime);
 
-      if (data.ok) {
-        setResults(data.result)
-        toast.success("Query executed successfully!", {
-          description: `Returned ${Array.isArray(data.result) ? data.result.length : 0} rows in ${(endTime - startTime).toFixed(2)}ms`,
-        })
-      } else {
-        toast.error("Error executing query", { description: data.error })
-      }
-    } catch (err: any) {
-      toast.error("Connection error", { description: err.message })
-    } finally {
-      setLoading(false)
+    if (data.ok) {
+      setResultsWithIndex(data.result);
+      toast.success("Query executed with index successfully!", {
+        description: `Returned ${Array.isArray(data.result) ? data.result.length : 0} rows in ${(endTime - startTime).toFixed(2)}ms`,
+      });
+    } else {
+      toast.error("Error executing query with index", { description: data.error });
     }
+  } catch (err: any) {
+    toast.error("Connection error", { description: err.message });
+  } finally {
+    setLoading(false);
   }
+};
+
+// Lo mismo para el query sin índice:
+const handleExecuteQueryWithoutIndex = async () => {
+  const startTime = performance.now();
+  setLoading(true);
+
+  try {
+    const res = await fetch("http://localhost:8000/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, use_index: false }),  // Pasando use_index como false
+    });
+
+    const data = await res.json();
+    const endTime = performance.now();
+    setExecutionTimeWithoutIndex(endTime - startTime);
+
+    if (data.ok) {
+      setResultsWithoutIndex(data.result);
+      toast.success("Query executed without index successfully!", {
+        description: `Returned ${Array.isArray(data.result) ? data.result.length : 0} rows in ${(endTime - startTime).toFixed(2)}ms`,
+      });
+    } else {
+      toast.error("Error executing query without index", { description: data.error });
+    }
+  } catch (err: any) {
+    toast.error("Connection error", { description: err.message });
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const handleLoadExample = (example: string) => {
     setQuery(example)
@@ -82,25 +117,29 @@ export function SQLQuery() {
           <div className="flex items-center justify-between">
             <div className="flex gap-2">
               <Button
-                onClick={handleExecuteQuery}
+                onClick={handleExecuteQueryWithIndex}
                 disabled={loading}
                 className="gap-2 hover:scale-105 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300 bg-gradient-to-r from-primary to-primary/90"
               >
                 <Play className="h-4 w-4" />
-                {loading ? "Running..." : "Execute Query"}
+                {loading ? "Running..." : "Execute Query With Index"}
               </Button>
               <Button
-                variant="outline"
-                onClick={() => setResults(null)}
-                className="hover:scale-105 transition-transform duration-300 bg-transparent"
+                onClick={handleExecuteQueryWithoutIndex}
+                disabled={loading}
+                className="gap-2 hover:scale-105 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300 bg-gradient-to-r from-primary to-primary/90"
               >
-                Clear
+                <Play className="h-4 w-4" />
+                {loading ? "Running..." : "Execute Query Without Index"}
               </Button>
             </div>
-            {executionTime && (
+            {(executionTimeWithIndex || executionTimeWithoutIndex) && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground animate-fade-in">
                 <Clock className="h-4 w-4" />
-                <span className="font-mono text-secondary font-semibold">{executionTime.toFixed(2)}ms</span>
+                <span className="font-mono text-secondary font-semibold">
+                  {executionTimeWithIndex && `With Index: ${executionTimeWithIndex.toFixed(2)}ms`}
+                  {executionTimeWithoutIndex && ` | Without Index: ${executionTimeWithoutIndex.toFixed(2)}ms`}
+                </span>
               </div>
             )}
           </div>
@@ -132,47 +171,60 @@ export function SQLQuery() {
       </Card>
 
       {/* Results */}
-      {results && Array.isArray(results) && results.length > 0 && (
+      {resultsWithIndex && Array.isArray(resultsWithIndex) && resultsWithIndex.length > 0 && (
         <Card className="glass-card border-white/10 animate-scale-in hover:shadow-xl hover:shadow-primary/5 transition-all duration-300">
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Query Results</CardTitle>
-                <CardDescription>{results.length} rows returned</CardDescription>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2 bg-transparent hover:scale-105 transition-transform duration-300"
-              >
-                <Download className="h-4 w-4" />
-                Export CSV
-              </Button>
-            </div>
+            <CardTitle>Results With Index</CardTitle>
+            <CardDescription>{resultsWithIndex.length} rows returned</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="rounded-lg border border-white/10 overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-white/10 hover:bg-white/5">
-                    {Object.keys(results[0]).map((col, i) => (
-                      <TableHead key={i}>{col}</TableHead>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {Object.keys(resultsWithIndex[0]).map((col, i) => (
+                    <TableHead key={i}>{col}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {resultsWithIndex.map((row, idx) => (
+                  <TableRow key={idx}>
+                    {Object.values(row).map((val, i) => (
+                      <TableCell key={i}>{String(val)}</TableCell>
                     ))}
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {results.map((row, idx) => (
-                    <TableRow key={idx} className="border-white/10 hover:bg-white/10 transition-all">
-                      {Object.values(row).map((val, i) => (
-                        <TableCell key={i} className="font-mono text-sm">
-                          {String(val)}
-                        </TableCell>
-                      ))}
-                    </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {resultsWithoutIndex && Array.isArray(resultsWithoutIndex) && resultsWithoutIndex.length > 0 && (
+        <Card className="glass-card border-white/10 animate-scale-in hover:shadow-xl hover:shadow-primary/5 transition-all duration-300">
+          <CardHeader>
+            <CardTitle>Results Without Index</CardTitle>
+            <CardDescription>{resultsWithoutIndex.length} rows returned</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {Object.keys(resultsWithoutIndex[0]).map((col, i) => (
+                    <TableHead key={i}>{col}</TableHead>
                   ))}
-                </TableBody>
-              </Table>
-            </div>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {resultsWithoutIndex.map((row, idx) => (
+                  <TableRow key={idx}>
+                    {Object.values(row).map((val, i) => (
+                      <TableCell key={i}>{String(val)}</TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       )}

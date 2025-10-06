@@ -171,3 +171,55 @@ class SchemaManager:
                 file_manager.delete_record(off * schema.size)
                 deleted += 1
         return f"{deleted} registros eliminados de {table_name}"
+    
+    # ---------------------------
+    # Crear índice
+    # ---------------------------
+    
+    def create_index(self, table_name, column, index_type):
+        if table_name not in self.tables:
+            raise ValueError(f"Tabla {table_name} no existe")
+
+        if column not in [c["name"] for c in self.tables[table_name]["schema"].columns]:
+            raise ValueError(f"La columna {column} no existe en la tabla {table_name}")
+
+        if index_type == "sequential":
+            idx = SequentialFile(table_name, column)
+        elif index_type == "isam":
+            idx = ISAMIndex(table_name, column)
+        elif index_type == "hash":
+            idx = ExtendibleHash(table_name, column)
+        elif index_type == "btree":
+            idx = BPlusTree(table_name, column)
+        elif index_type == "rtree":
+            idx = RTree(table_name, column)
+        else:
+            raise ValueError(f"Tipo de índice no soportado: {index_type}")
+
+        self.tables[table_name]["indexes"][column] = idx
+        self._save_catalog()
+        return f"Índice {index_type} creado en {table_name}({column})"
+    
+    def select_without_index(self, table_name, columns, condition, limit=None):
+            table = self.tables[table_name]
+            schema, file_manager = table["schema"], table["file"]
+
+            results = []
+            for rec in file_manager.scan_all():
+                try:
+                    rec_dict = rec if isinstance(rec, dict) else {
+                        schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))
+                    }
+
+                    # Evaluar condición de forma segura
+                    if eval(condition.replace("=", "=="), {}, rec_dict):
+                        results.append(rec_dict)
+
+                    # Limitar resultados
+                    if limit and len(results) >= limit:
+                        break
+                except Exception as e:
+                    print(f"Error evaluando condición: {e}")
+                    continue
+
+            return results
