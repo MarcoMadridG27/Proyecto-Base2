@@ -1,154 +1,221 @@
 # parser/parser.py
-from src.parser.lexer import tokenize  
+from typing import Any, Dict, List, Optional
+from .lexer import tokenize
+
+# ---------- helpers básicos ----------
+
+def _unquote(s: str) -> str:
+    """Quita comillas simples/dobles si existen."""
+    s = s.strip()
+    if (len(s) >= 2) and ((s[0] == s[-1]) and s[0] in ("'", '"')):
+        return s[1:-1]
+    return s
+
+def _lit(tok: str) -> Any:
+    """
+    Literal a Python:
+      - "10" -> int(10)
+      - "10.5" -> float(10.5)
+      - "'Zoe'" o "Zoe" -> "Zoe" (sin comillas en el primer caso)
+    """
+    t = tok.strip()
+    # int
+    try:
+        if "." not in t:
+            return int(t)
+    except Exception:
+        pass
+    # float
+    try:
+        return float(t)
+    except Exception:
+        pass
+    # string
+    return _unquote(t)
+
+def _find(words: List[str], target: str) -> int:
+    """Índice de 'target' (case-insensitive) o -1 si no está."""
+    tgt = target.lower()
+    for i, w in enumerate(words):
+        if w.lower() == tgt:
+            return i
+    return -1
+
+# ---------- parser principal ----------
 
 class SQLParser:
-    def parse(self, query: str):
-        tokens = [t[1].lower() if t[0] in ("IDENT", "OP") else t[1] for t in tokenize(query)]
-        if tokens[0] == "create":
-            return self._parse_create(tokens)
-        elif tokens[0] == "insert":
-            return self._parse_insert(tokens)
-        elif tokens[0] == "delete":
-            return self._parse_delete(tokens)
-        elif tokens[0] == "select":
-            return self._parse_select(tokens)
-        else:
-            raise ValueError("Sentencia SQL no soportada")
+    """
+    SQL MUY reducido -> AST (diccionario).
+    Soporta:
+      - CREATE TABLE t (col TYPE [INDEX kind], ...)
+      - INSERT INTO t VALUES (v1, v2, ...)
+      - SELECT cols FROM t [WHERE col {=,<,<=,>,>=} val | col BETWEEN a AND b] [USING col] [LIMIT n]
+      - DELETE FROM t WHERE col = val
+    """
 
-    def _parse_create(self, tokens):
-        """
-        CREATE TABLE Restaurantes (
-            id INT INDEX isam,
-            nombre VARCHAR[20] INDEX btree,
-            fecha DATE
-        )
-        """
-        table = tokens[2]
-        # Extraer definición de columnas entre paréntesis
-        if "(" in tokens and ")" in tokens:
-            open_paren = tokens.index("(")
-            close_paren = len(tokens) - 1 - tokens[::-1].index(")")
-            cols_tokens = tokens[open_paren+1:close_paren]
-        else:
-            raise ValueError("CREATE TABLE debe definir columnas")
+    def parse(self, query: str) -> Dict[str, Any]:
+        toks = tokenize(query)
+        words = [v for (_k, v) in toks]
+        if not words:
+            raise ValueError("Consulta vacía")
 
+        first = words[0].lower()
+        if first == "create":
+            return self._parse_create(words)
+        if first == "insert":
+            return self._parse_insert(words)
+        if first == "select":
+            return self._parse_select(words)
+        if first == "delete":
+            return self._parse_delete(words)
+        raise ValueError(f"Sentencia no soportada: {first}")
 
-        # Parsear columnas
-        columns, index_map = [], {}
-        i = 0
-        valid_types = {"INT", "FLOAT", "DATE", "VARCHAR", "CHAR"}
-        while i < len(cols_tokens):
-                if i+1 >= len(cols_tokens):
-                    break
-                name = cols_tokens[i]
-                ctype = cols_tokens[i+1].upper()
-                
-                # Normalizar VARCHAR sin tamaño a VARCHAR[100]
-                if ctype == "VARCHAR" and i+2 < len(cols_tokens) and not cols_tokens[i+2].startswith("["):
-                    ctype = "VARCHAR[100]"
-                
-                if ctype not in valid_types and not ctype.startswith("VARCHAR["):
-                    ctype = "VARCHAR[100]"
-                    
-                col_def = {"name": name, "type": ctype}
-                i += 2
-                
-                # Si el siguiente token es tamaño [20], lo agregamos al tipo
-                if i < len(cols_tokens) and cols_tokens[i].startswith("["):
-                    ctype += cols_tokens[i]
-                    i += 1
+    # ---------- CREATE ----------
 
-        return {
-            "operation": "create",
-            "table": table,
-            "columns": columns,
-            "index_map": index_map
-        }
+    def _parse_create(self, w: List[str]) -> Dict[str, Any]:
+        # CREATE TABLE <name> ( col TYPE [INDEX kind], ... )
+        if len(w) < 3 or w[1].lower() != "table":
+            raise ValueError("Sintaxis: CREATE TABLE <name> (...)")
+        table = w[2]
 
-    def _parse_insert(self, tokens):
-        # INSERT INTO <table> VALUES (...)
-        table = tokens[2]
-        open_paren = tokens.index("(")
-        close_paren = tokens.index(")")
-        values = tokens[open_paren+1:close_paren]
-        return {
-            "operation": "insert",
-            "table": table,
-            "values": [v.strip(",") for v in values]
-        }
+        lp = _find(w, "(")
+        rp = _find(w, ")")
+        if lp == -1 or rp == -1 or rp <= lp + 1:
+            raise ValueError("CREATE TABLE requiere definición de columnas entre ()")
+        body = w[lp + 1 : rp]
 
-    def _parse_delete(self, tokens):
-        # DELETE FROM <table> WHERE <cond>
-        table = tokens[2]
-        where_index = tokens.index("where")
-        condition = tokens[where_index+1:]
-        return {
-            "operation": "delete",
-            "table": table,
-            "condition": " ".join(condition)
-        }
-
-    def _parse_select(self, tokens):
-
-        from_index = tokens.index("from")
-        raw_columns = tokens[1:from_index]
-
-        columns = [c.strip(",") for c in raw_columns if c != ","]
-
-        table = tokens[from_index + 1]
-
-        condition, index, limit = None, None, None
-
-        if "where" in tokens:
-            where_index = tokens.index("where")
-            end_idx = len(tokens)
-            if "using" in tokens:
-                end_idx = tokens.index("using")
-            if "limit" in tokens:
-                end_idx = min(end_idx, tokens.index("limit"))
-            condition = " ".join(tokens[where_index + 1:end_idx])
-
-        if "using" in tokens:
-            idx_index = tokens.index("using")
-            # hasta LIMIT o fin
-            if "limit" in tokens:
-                end_idx = tokens.index("limit")
-                index = " ".join(tokens[idx_index + 1:end_idx])
+        # separar por comas en items
+        items: List[List[str]] = []
+        cur: List[str] = []
+        for tok in body:
+            if tok == ",":
+                if cur:
+                    items.append(cur)
+                cur = []
             else:
-                index = tokens[idx_index + 1]
+                cur.append(tok)
+        if cur:
+            items.append(cur)
 
-        if "limit" in tokens:
-            limit_index = tokens.index("limit")
-            try:
-                limit = int(tokens[limit_index + 1])
-            except:
-                raise ValueError("LIMIT debe ir seguido de un número entero")
+        columns: List[Dict[str, str]] = []
+        index_map: Dict[str, str] = {}
+
+        for it in items:
+            # it: ["id","INT"]  o  ["nombre","VARCHAR[20]","INDEX","btree"]
+            if len(it) < 2:
+                raise ValueError(f"Columna mal definida: {' '.join(it)}")
+            name = it[0]
+            ctype = it[1]
+            columns.append({"name": name, "type": ctype})
+            if len(it) >= 4 and it[2].lower() == "index":
+                index_map[name] = it[3].lower()
+
+        return {"operation": "create", "table": table, "columns": columns, "index_map": index_map}
+
+    # ---------- INSERT ----------
+
+    def _parse_insert(self, w: List[str]) -> Dict[str, Any]:
+        # INSERT INTO <t> VALUES (v1, v2, ...)
+        if len(w) < 4 or w[1].lower() != "into":
+            raise ValueError("Sintaxis: INSERT INTO <tabla> VALUES (...)")
+        table = w[2]
+        if _find(w, "values") == -1:
+            raise ValueError("INSERT requiere VALUES (...)")
+
+        lp = _find(w, "(")
+        rp = _find(w, ")")
+        if lp == -1 or rp == -1 or rp <= lp + 1:
+            raise ValueError("INSERT VALUES requiere paréntesis con valores")
+        raw = [t for t in w[lp + 1 : rp] if t != ","]
+        values = [_lit(t) for t in raw]
+        return {"operation": "insert", "table": table, "values": values}
+
+    # ---------- SELECT (con rangos) ----------
+
+    def _parse_select(self, w: List[str]) -> Dict[str, Any]:
+        # SELECT cols FROM t [WHERE ...] [USING col] [LIMIT n]
+        fi = _find(w, "from")
+        if fi == -1:
+            raise ValueError("SELECT requiere FROM")
+
+        raw_cols = [t for t in w[1:fi] if t != ","]
+        columns = raw_cols or ["*"]
+
+        if fi + 1 >= len(w):
+            raise ValueError("Falta tabla tras FROM")
+        table = w[fi + 1]
+
+        where: Optional[Dict[str, Any]] = None
+        idx_col: Optional[str] = None
+        limit: Optional[int] = None
+
+        # WHERE (acepta: col = v | col < v | col <= v | col > v | col >= v | col BETWEEN a AND b)
+        wi = _find(w, "where")
+        if wi != -1:
+            end = len(w)
+            ui = _find(w, "using")
+            li = _find(w, "limit")
+            if ui != -1:
+                end = min(end, ui)
+            if li != -1:
+                end = min(end, li)
+            cond = [t for t in w[wi + 1 : end] if t != ","]
+
+            # BETWEEN
+            bi = _find(cond, "between")
+            if bi == 1 and _find(cond, "and") == 3 and len(cond) >= 5:
+                # cond: [col, between, a, and, b]
+                col = cond[0]
+                lo = _lit(cond[2])
+                hi = _lit(cond[4])
+                where = {
+                    "type": "range",
+                    "column": col,
+                    "low": lo,
+                    "high": hi,
+                    "inc_low": True,
+                    "inc_high": True,
+                }
+            # Comparadores simples
+            elif len(cond) >= 3 and cond[1] in ("=", "==", "<", "<=", ">", ">="):
+                op = cond[1]
+                col = cond[0]
+                val = _lit(cond[2])
+                m = {"=": "eq", "==": "eq", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
+                where = {"type": m[op], "column": col, "value": val}
+
+        # USING
+        ui = _find(w, "using")
+        if ui != -1 and ui + 1 < len(w):
+            idx_col = w[ui + 1]
+
+        # LIMIT
+        li = _find(w, "limit")
+        if li != -1 and li + 1 < len(w):
+            limit = int(_lit(w[li + 1]))
 
         return {
             "operation": "select",
             "table": table,
-            "columns": columns if columns else ["*"],
-            "condition": condition,
-            "index": index,
-            "limit": limit
+            "columns": columns,
+            "where": where,     # dict estructurado o None
+            "index": idx_col,   # columna cuyo índice preferimos usar
+            "limit": limit,
         }
 
+    # ---------- DELETE ----------
 
+    def _parse_delete(self, w: List[str]) -> Dict[str, Any]:
+        # DELETE FROM t WHERE col = val
+        if len(w) < 3 or w[1].lower() != "from":
+            raise ValueError("Sintaxis: DELETE FROM <tabla> WHERE ...")
+        table = w[2]
+        wi = _find(w, "where")
+        if wi == -1:
+            raise ValueError("DELETE requiere WHERE col = val")
 
-if __name__ == "__main__":
-    parser = SQLParser()
-
-    q1 = """
-    CREATE TABLE Restaurantes (
-        id int index isam,
-        nombre varchar[20] index btree,
-        fecha date
-    )
-    """
-    print(parser.parse(q1))
-
-    q2 = "INSERT INTO Restaurantes VALUES (1, 'KFC', '2023-01-01')"
-    print(parser.parse(q2))
-
-    q3 = "SELECT * FROM Restaurantes WHERE id = 10 USING btree"
-    print(parser.parse(q3))
+        cond = [t for t in w[wi + 1 :] if t != ","]
+        if len(cond) < 3 or cond[1] not in ("=", "=="):
+            raise ValueError("WHERE debe ser 'col = valor'")
+        where = {"type": "eq", "column": cond[0], "value": _lit(cond[2])}
+        return {"operation": "delete", "table": table, "where": where}

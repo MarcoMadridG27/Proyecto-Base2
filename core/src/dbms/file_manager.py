@@ -1,79 +1,97 @@
-# core/file_manager.py
 import os
+from typing import Dict, Any, Iterator, Tuple, Optional
 
 class FileManager:
     """
-    Maneja operaciones de bajo nivel sobre archivos binarios (.dat).
-    Se apoya en RecordSchema para empacar y desempacar registros.
+    Archivo .dat de registros de tamaño fijo (no hay headers por registro).
+    - Borrado = bytes a cero.
+    - Devuelve offsets reales para poder indexar.
     """
 
-    def __init__(self, filename, schema):
-        """
-        filename: ruta del archivo binario (ej. "restaurantes.dat")
-        schema: instancia de RecordSchema
-        """
+    def __init__(self, filename: str, schema):
         self.filename = filename
         self.schema = schema
-
-        # Si no existe, creamos el archivo vacío
         if not os.path.exists(filename):
-            with open(filename, "wb") as f:
+            with open(filename, "wb"):
                 pass
 
-    def append_record(self, record_dict):
+    @property
+    def record_size(self) -> int:
+        return self.schema.size
+
+    def file_size(self) -> int:
+        return os.path.getsize(self.filename)
+
+    def append_record(self, record_dict: Dict[str, Any]) -> int:
+        """Empaca y escribe al final. Retorna offset (byte) donde empieza el registro."""
         data = self.schema.pack(record_dict)
-        print(f"[DEBUG] Empacando registro: {record_dict}")
-        print(f"[DEBUG] Bytes generados: {len(data)} -> {data[:50]}...")  # primeras 50 bytes
+        if len(data) != self.record_size:
+            raise ValueError("Tamaño pack != schema.size")
         with open(self.filename, "ab") as f:
-            offset = f.tell()
-            print(f"[DEBUG] Offset antes de escribir: {offset}")
+            off = f.tell()
             f.write(data)
-            print(f"[DEBUG] Nuevo tamaño archivo: {f.tell()}")
-        return offset
+        return off
 
-
-    def read_record(self, offset):
-        """
-        Lee un registro desde el offset dado.
-        """
+    def read_record(self, offset: int) -> Optional[Dict[str, Any]]:
+        """Lee en offset; None si fuera de rango o tombstone (todo \x00)."""
+        if offset < 0 or offset + self.record_size > self.file_size():
+            return None
         with open(self.filename, "rb") as f:
             f.seek(offset)
-            binary = f.read(self.schema.size)
-            if not binary or len(binary) < self.schema.size:
-                return None
-        return self.schema.unpack(binary)
+            buf = f.read(self.record_size)
+        if len(buf) < self.record_size:
+            return None
+        if buf.strip(b"\x00") == b"":
+            return None
+        return self.schema.unpack(buf)
 
-    def update_record(self, offset, new_record_dict):
-        """
-        Sobrescribe un registro en un offset específico.
-        """
+    def update_record(self, offset: int, new_record_dict: Dict[str, Any]) -> bool:
+        """Sobrescribe en offset si es válido."""
+        if offset < 0 or offset + self.record_size > self.file_size():
+            return False
         data = self.schema.pack(new_record_dict)
+        if len(data) != self.record_size:
+            raise ValueError("Tamaño pack != schema.size")
         with open(self.filename, "r+b") as f:
             f.seek(offset)
             f.write(data)
+        return True
 
-    def delete_record(self, offset):
-        """
-        Marca un registro como borrado (tombstone).
-        En este caso, sobrescribimos con bytes nulos.
-        """
+    def delete_record(self, offset: int) -> bool:
+        """Marca borrado escribiendo \x00 * record_size."""
+        if offset < 0 or offset + self.record_size > self.file_size():
+            return False
         with open(self.filename, "r+b") as f:
             f.seek(offset)
-            f.write(b"\x00" * self.schema.size)
+            f.write(b"\x00" * self.record_size)
+        return True
 
-    def scan_all(self):
-        """
-        Devuelve todos los registros válidos en el archivo.
-        """
-        records = []
+    def scan_all(self) -> Iterator[Dict[str, Any]]:
+        """Itera todos los registros válidos (no borrados)."""
+        size = self.record_size
+        end = self.file_size()
         with open(self.filename, "rb") as f:
-            while True:
-                binary = f.read(self.schema.size)
-                if not binary or len(binary) < self.schema.size:
+            off = 0
+            while off + size <= end:
+                f.seek(off)
+                buf = f.read(size)
+                if len(buf) < size:
                     break
-                # Ignorar registros "borrados"
-                if binary.strip(b"\x00") == b"":
-                    continue
-                records.append(self.schema.unpack(binary))
-        return records
-    
+                if buf.strip(b"\x00") != b"":
+                    yield self.schema.unpack(buf)
+                off += size
+
+    def scan_all_with_offsets(self) -> Iterator[Tuple[int, Dict[str, Any]]]:
+        """Igual que scan_all, pero entrega también offset de cada registro."""
+        size = self.record_size
+        end = self.file_size()
+        with open(self.filename, "rb") as f:
+            off = 0
+            while off + size <= end:
+                f.seek(off)
+                buf = f.read(size)
+                if len(buf) < size:
+                    break
+                if buf.strip(b"\x00") != b"":
+                    yield off, self.schema.unpack(buf)
+                off += size
