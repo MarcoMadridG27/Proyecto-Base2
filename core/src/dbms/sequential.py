@@ -45,7 +45,6 @@ class EntrySF:
     """ Registro con un valor y puntero al siguiente en la lista lógica. """
 
     def __init__(self, offset: int, value, next_ptr: int = 0):
-        print(value)
         self.offset = offset
         self.value = value
         self.next_ptr = next_ptr
@@ -103,9 +102,10 @@ class SequentialFile:
         # Crear un formato para el registro con el tipo de columna adecuado.
         global FORMAT_VALUE
         FORMAT_VALUE = column_type
+        dir="/app/src/dbms/data_index"
         self.column_type = column_type  # Esto es como '100s' o 'i'
-        self.filename = os.path.join("data_index", f"{table}_index_sequential.dat")
-        os.makedirs("data_index", exist_ok=True)
+        os.makedirs(dir, exist_ok=True)
+        self.filename = os.path.join(dir, f"{table}_index_sequential.dat")
 
         # Definir formato de registro según la columna (ejemplo: 'i' para INT o '100s' para VARCHAR)
         global EMP_FORMAT
@@ -114,7 +114,6 @@ class SequentialFile:
 
         # Si el archivo no existe, crearlo
         if not os.path.exists(self.filename):
-            print(f"El archivo {self.filename} no  existe")
             with open(self.filename, "wb") as f:
                 f.write(struct.pack(HEADER_FORMAT, 0, 0, 0))  # D=0, A=0, head=0
 
@@ -168,7 +167,7 @@ class SequentialFile:
                 l = m + 1
         return ans
 
-    def range_search(self, lo, hi) -> List[int]:
+    def search_range(self, lo, hi) -> List[int]:
         if lo > hi:
             lo, hi = hi, lo
         main_count, _, head_ptr = self._get_header()

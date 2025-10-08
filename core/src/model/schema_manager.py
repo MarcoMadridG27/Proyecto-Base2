@@ -75,6 +75,10 @@ class SchemaManager:
             catalog = json.load(f)
 
         for t, meta in catalog.items():
+            # Asegurarse de que las columnas están definidas
+            if "columns" not in meta:
+                raise ValueError(f"Las columnas de la tabla {t} no están definidas en el catálogo.")
+
             # Cargar el esquema de columnas y el archivo .dat correspondiente
             schema = RecordSchema(meta["columns"])
             filepath = os.path.join(self.data_dir, f"{t}.dat")
@@ -87,7 +91,15 @@ class SchemaManager:
                 ctor = INDEX_TYPES.get(typ)
                 if not ctor:
                     raise ValueError(f"Tipo de índice desconocido en catálogo: {typ}")
-                indexes[col] = ctor(t, col)
+
+                # Verificar que las columnas estén disponibles
+                column = next((c for c in schema.columns if c["name"] == col))
+                if column is None:
+                    raise ValueError(f"Columna {col} no encontrada en la tabla {t}.")
+
+                column_type = column["type"]
+                column_format = self.get_column_format(column_type)
+                indexes[col] = ctor(t, column_format)
 
             # Registra la tabla en memoria
             self.tables[t] = {
@@ -166,7 +178,7 @@ class SchemaManager:
         if where:
             col = where.get("column")
             val = where.get("value")
-            idx = t["indexes"].get(col)  # solo fijarse en la columna de la condición
+            idx = t["indexes"].get(col) # solo fijarse en la columna de la condición
 
             if where["type"] == "eq":
                 if idx:
@@ -184,9 +196,8 @@ class SchemaManager:
                                 break
 
             elif where["type"] in ["range"]:
-                print(where)
                 low, high = where.get("low"), where.get("high")
-                if idx and hasattr(idx, "search_range"):
+                if idx:
                     # usar índice si soporta búsqueda por rango
                     for off in idx.search_range(low, high):
                         row = fm.read_record(off)
@@ -213,7 +224,6 @@ class SchemaManager:
 
     def _match_range(self, value: Any, low: Any, high: Any) -> bool:
         """Verifica si el valor está dentro del rango especificado (inclusive)."""
-        print(value, low, high)
         # Si el valor es None, lo consideramos fuera de rango
         if value is None:
             return False

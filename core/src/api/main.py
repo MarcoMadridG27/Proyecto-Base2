@@ -7,7 +7,7 @@ import shutil
 import csv
 from datetime import datetime
 
-from src.parser.executor import Executor
+from src.executor import Executor
 
 # Inicializamos Executor
 executor = Executor(data_dir="data")

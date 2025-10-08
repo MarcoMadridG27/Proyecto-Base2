@@ -4,13 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="mejorado y ordenado">
+    <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="mejorado">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/api/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/api/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/dbms/sequential.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/sequential.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/model/schema_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/model/schema_manager.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/parser/lexer.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/parser/lexer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/parser/parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/parser/parser.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/parser/executor.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/executor.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/docker-compose.yml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -26,12 +26,12 @@
     &quot;assignee&quot;: &quot;MarcoMadridG27&quot;
   }
 }</component>
-  <component name="GithubPullRequestsUISettings">{
-  &quot;selectedUrlAndAccountId&quot;: {
-    &quot;url&quot;: &quot;https://github.com/MarcoMadridG27/Proyecto-Base2.git&quot;,
-    &quot;accountId&quot;: &quot;d531a795-bd3f-4978-9d98-2c65215f143d&quot;
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/MarcoMadridG27/Proyecto-Base2.git",
+    "accountId": "91670256-3d82-425b-97f9-c2a7049a313d"
   }
-}</component>
+}]]></component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 8
 }</component>
@@ -64,11 +64,11 @@
 }</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\Juan\Desktop\Proyecto-Base2\core\src" />
       <recent name="C:\Users\Juan\Desktop\Proyecto-Base2\core\src\model" />
       <recent name="C:\Users\ASUS\proyecto-base4\src\app\query" />
       <recent name="C:\Users\ASUS\proyecto-base4\src\app\spatial" />
       <recent name="C:\Users\ASUS\proyecto-base4\src\app\index" />
-      <recent name="C:\Users\ASUS\proyecto-base4\src\app\upload" />
     </key>
   </component>
   <component name="RunManager" selected="Python.lexer">
@@ -88,7 +88,7 @@
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/core/src/parser/executor.py" />
+      <option name="SCRIPT_NAME" value="C:\Users\Juan\Desktop\Proyecto-Base2\core\src\executor.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -194,7 +194,23 @@
       <option name="project" value="LOCAL" />
       <updated>1759885107082</updated>
     </task>
-    <option name="localTasksCounter" value="6" />
+    <task id="LOCAL-00006" summary="mejorado">
+      <option name="closed" value="true" />
+      <created>1759899270051</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1759899270051</updated>
+    </task>
+    <task id="LOCAL-00007" summary="mejorado">
+      <option name="closed" value="true" />
+      <created>1759899422769</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1759899422769</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -203,6 +219,7 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="trabajo" />
     <MESSAGE value="mejorado y ordenado" />
-    <option name="LAST_COMMIT_MESSAGE" value="mejorado y ordenado" />
+    <MESSAGE value="mejorado" />
+    <option name="LAST_COMMIT_MESSAGE" value="mejorado" />
   </component>
 </project>
