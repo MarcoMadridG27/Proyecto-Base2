@@ -4,8 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="trabajo">
+    <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="mejorado y ordenado">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/api/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/api/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/dbms/sequential.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/sequential.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/model/schema_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/model/schema_manager.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/parser/lexer.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/parser/lexer.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/parser/parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/parser/parser.py" afterDir="false" />
     </list>
@@ -167,7 +170,31 @@
       <option name="project" value="LOCAL" />
       <updated>1759884407896</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="mejorado y ordenado">
+      <option name="closed" value="true" />
+      <created>1759884876988</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1759884876988</updated>
+    </task>
+    <task id="LOCAL-00004" summary="mejorado y ordenado">
+      <option name="closed" value="true" />
+      <created>1759885077734</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1759885077734</updated>
+    </task>
+    <task id="LOCAL-00005" summary="mejorado y ordenado">
+      <option name="closed" value="true" />
+      <created>1759885107082</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1759885107082</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -175,6 +202,7 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="trabajo" />
-    <option name="LAST_COMMIT_MESSAGE" value="trabajo" />
+    <MESSAGE value="mejorado y ordenado" />
+    <option name="LAST_COMMIT_MESSAGE" value="mejorado y ordenado" />
   </component>
 </project>

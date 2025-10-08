@@ -26,5 +26,5 @@ def tokenize(sql: str) -> List[Tuple[str, str]]:
     return out
 
 if __name__ == "__main__":
-    q = "CREATE TABLE restaurantes (id INT, nombre VARCHAR 100, tipo VARCHAR 50, ubicacion VARCHAR 100, calificacion FLOAT, fecha_apertura DATE);"
+    q = "SELECT * FROM crocodile where observation_id >= '1'"
     print(tokenize(q))

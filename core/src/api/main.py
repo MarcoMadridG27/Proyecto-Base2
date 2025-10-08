@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import os
 import shutil
 import csv
+from datetime import datetime
 
 from src.parser.executor import Executor
 
@@ -26,29 +27,119 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # -------------------------------
 # MODELOS
 # -------------------------------
 class QueryRequest(BaseModel):
     query: str
 
+
 class IndexRequest(BaseModel):
     index_type: str
     table_name: str
 
+
+# -------------------------------
+# FUNCIONES AUXILIARES
+# -------------------------------
+
+from datetime import datetime
+
+from datetime import datetime
+
+
+def detect_column_type(values: list[str]) -> str:
+    """
+    Detecta el tipo de una columna basándose en los valores.
+    Si todos los valores son numéricos, será 'INT' o 'FLOAT'.
+    Si todos los valores son fechas válidas, será 'DATE'.
+    De lo contrario, será 'VARCHAR'.
+    """
+    is_int = True
+    is_float = True
+    is_date = True
+    date_formats = [
+        "%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%d/%m/%Y",  # Formatos que incluimos para manejar las fechas.
+        "%m-%d-%Y", "%d/%m/%Y",  # Otros formatos posibles.
+    ]
+
+    # Depuración: Mostrar los valores para ver qué estamos analizando
+    print("Detectando tipo para valores:", values)
+
+    for value in values:
+        # Eliminar espacios antes y después, y verificar si la cadena no está vacía
+        value = value.strip()
+        if value == "":
+            continue
+
+        # Depuración: Mostrar cada valor que estamos procesando
+        print(f"Procesando valor: {value}")
+
+        # Verificar si es un entero
+        if is_int:
+            try:
+                int(value)
+            except ValueError:
+                is_int = False
+
+        # Verificar si es un flotante
+        if is_float:
+            try:
+                float(value)
+            except ValueError:
+                is_float = False
+
+        # Verificar si es una fecha
+        if is_date:
+            try:
+                # Intentamos convertir el valor al formato de fecha
+                valid_date = False
+                for fmt in date_formats:
+                    try:
+                        datetime.strptime(value, fmt)
+                        valid_date = True
+                        break
+                    except ValueError:
+                        pass
+
+                if not valid_date:
+                    is_date = False
+            except ValueError:
+                is_date = False
+
+        # Si ya determinamos que no es ninguno de los tipos, podemos salir del loop
+        if not is_int and not is_float and not is_date:
+            break
+
+    # Depuración: Mostrar el resultado de la detección
+    print(f"Es fecha: {is_date}, Es flotante: {is_float}, Es entero: {is_int}")
+
+    # Retornar el tipo de dato según los valores detectados
+    if is_date:
+        return "DATE"
+    if is_float:
+        return "FLOAT"
+    if is_int:
+        return "INT"
+
+    return "VARCHAR[100]"  # Default a VARCHAR
+
+
 # -------------------------------
 # ENDPOINTS
 # -------------------------------
+
 @app.get("/health")
 def health():
     return {"status": "ok", "message": "Backend running!"}
+
 
 @app.post("/query")
 def run_query(request: QueryRequest):
     try:
         print(f"Query recibida: {request.query}")  # Debug
         result = executor.execute(request.query)
-        print(f"Resultado: {result}")  # Debug - VER ESTO
         print(f"Tipo resultado: {type(result)}")  # Debug
         return {"ok": True, "result": result}
     except Exception as e:
@@ -56,6 +147,7 @@ def run_query(request: QueryRequest):
         import traceback
         traceback.print_exc()
         return {"ok": False, "error": str(e)}
+
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), table_name: str = Form("uploaded_table")):
@@ -89,8 +181,14 @@ async def upload_file(file: UploadFile = File(...), table_name: str = Form("uplo
         # Normalizar headers (sin espacios, todo lowercase)
         clean_headers = [col.strip().replace(" ", "_").replace("-", "_").lower() for col in headers]
 
+        # Detectar tipo de columnas
+        column_types = {}
+        for col_idx, col_name in enumerate(clean_headers):
+            column_values = [row[col_idx] for row in all_data]
+            column_types[col_name] = detect_column_type(column_values)
+
         # Definir columnas como lista de dicts (para SchemaManager)
-        columns_def = [{"name": col, "type": "VARCHAR[100]"} for col in clean_headers]
+        columns_def = [{"name": col, "type": column_types[col]} for col in clean_headers]
 
         # --- Crear tabla solo si no existe ---
         if table_name in executor.schema_manager.tables:
@@ -122,7 +220,7 @@ async def upload_file(file: UploadFile = File(...), table_name: str = Form("uplo
             "ok": True,
             "fileName": file.filename,
             "tableName": table_name,
-            "fileSize": f"{round(os.path.getsize(save_path)/1024, 2)} KB",
+            "fileSize": f"{round(os.path.getsize(save_path) / 1024, 2)} KB",
             "recordCount": record_count,
             "inserted": inserted,
             "failed": failed,
@@ -139,6 +237,7 @@ async def upload_file(file: UploadFile = File(...), table_name: str = Form("uplo
             content={"ok": False, "error": str(e), "detail": error_detail},
             status_code=500
         )
+
 
 @app.post("/create_index")
 def create_index(request: IndexRequest):

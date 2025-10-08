@@ -39,25 +39,46 @@ def label(p: int) -> str:
 # ============================================================
 # Layout de registro (payload + next_ptr)
 # ============================================================
-EMP_FORMAT = ()  # Formato para (offset(en memoria secundaria), value(key), next_ptr)
-RECORD_SIZE = ()
-
+EMP_FORMAT = ''  # Formato para (offset(en memoria secundaria), value(key), next_ptr)
+FORMAT_VALUE = ''
 class EntrySF:
     """ Registro con un valor y puntero al siguiente en la lista lógica. """
+
     def __init__(self, offset: int, value, next_ptr: int = 0):
+        print(value)
         self.offset = offset
         self.value = value
         self.next_ptr = next_ptr
 
     def pack(self) -> bytes:
-        """ Empaqueta el registro en formato binario. """
-        return struct.pack(EMP_FORMAT, self.offset, self.value.encode('utf-8'), self.next_ptr)
+        """ Empaqueta el registro en formato binario de acuerdo al tipo de valor. """
+
+        if FORMAT_VALUE=="i":
+            # Para enteros, simplemente empaquetamos como un entero
+            return struct.pack(EMP_FORMAT, self.offset, self.value, self.next_ptr)
+        elif FORMAT_VALUE=="f":
+            # Para flotantes, usamos el tipo de datos `f` para empaquetar
+            return struct.pack(EMP_FORMAT, self.offset, self.value, self.next_ptr)
+        elif FORMAT_VALUE[len(FORMAT_VALUE)-1]=="s":
+            return struct.pack(EMP_FORMAT, self.offset, self.value.encode('utf-8'), self.next_ptr)
+        else:
+            raise ValueError(f"Tipo de valor no soportado: {type(self.value)}")
 
     @staticmethod
     def unpack(buf: bytes) -> "EntrySF":
         """ Desempaqueta un registro desde bytes. """
+
+        # Intentamos desempaquetar el registro de forma dinámica
         offset, value, next_ptr = struct.unpack(EMP_FORMAT, buf)
-        return EntrySF(offset, value.decode('utf-8'), next_ptr)
+
+        # Si `value` es un entero o flotante, no necesitamos decodificar.
+        # Si es un string, lo decodificamos.
+        try:
+            value = value.decode("utf-8")  # Intentamos decodificar si es un string
+        except AttributeError:
+            pass  # Si no es un string, ignoramos el error y mantenemos el valor tal cual
+
+        return EntrySF(offset, value, next_ptr)
 
     def is_deleted(self) -> bool:
         """ Verifica si el registro está marcado como eliminado (tombstone). """
@@ -77,18 +98,23 @@ class SequentialFile:
       - Lista lógica ordenada enlazada por next_ptr
     """
     def __init__(self, table: str, column_type: str):
+
         """ Inicializa el archivo secuencial con el tipo de columna (formato). """
         # Crear un formato para el registro con el tipo de columna adecuado.
+        global FORMAT_VALUE
+        FORMAT_VALUE = column_type
         self.column_type = column_type  # Esto es como '100s' o 'i'
-        self.filename = os.path.join("data_index", f"{table}_index.dat")
+        self.filename = os.path.join("data_index", f"{table}_index_sequential.dat")
         os.makedirs("data_index", exist_ok=True)
 
         # Definir formato de registro según la columna (ejemplo: 'i' para INT o '100s' para VARCHAR)
+        global EMP_FORMAT
         EMP_FORMAT = f"<i{column_type}i"  # offset, value, next_ptr
         self.RECORD_SIZE = struct.calcsize(EMP_FORMAT)
 
         # Si el archivo no existe, crearlo
         if not os.path.exists(self.filename):
+            print(f"El archivo {self.filename} no existe")
             with open(self.filename, "wb") as f:
                 f.write(struct.pack(HEADER_FORMAT, 0, 0, 0))  # D=0, A=0, head=0
 

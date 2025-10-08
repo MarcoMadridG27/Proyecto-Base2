@@ -183,7 +183,8 @@ class SchemaManager:
                             if limit and len(out) >= limit:
                                 break
 
-            elif where["type"] in ["lt", "le", "gt", "ge", "range"]:
+            elif where["type"] in ["range"]:
+                print(where)
                 low, high = where.get("low"), where.get("high")
                 if idx and hasattr(idx, "search_range"):
                     # usar índice si soporta búsqueda por rango
@@ -212,7 +213,7 @@ class SchemaManager:
 
     def _match_range(self, value: Any, low: Any, high: Any) -> bool:
         """Verifica si el valor está dentro del rango especificado (inclusive)."""
-
+        print(value, low, high)
         # Si el valor es None, lo consideramos fuera de rango
         if value is None:
             return False
@@ -222,7 +223,6 @@ class SchemaManager:
             return False
         if high is not None and value > high:
             return False
-
         return True
 
     # ===================== Utilidades internas =====================
@@ -296,64 +296,64 @@ class SchemaManager:
         return deleted
 
     # ===================== Crear Índice =====================
+    @staticmethod
+    def get_column_format(column_type: str) -> str:
+        """
+        Convierte el tipo de columna (por ejemplo 'VARCHAR[100]', 'INT', 'DATE') a un formato
+        adecuado para ser utilizado en la creación de índices.
+        """
+        if column_type.startswith("VARCHAR"):
+            # Extraer el número de caracteres entre corchetes y devolver el formato
+            length = int(column_type[len("VARCHAR["): -1])  # obtiene el número entre corchetes
+            return f"{length}s"  # Retorna un formato de cadena de longitud variable, ej: 100s
+        elif column_type == "INT":
+            return "i"  # Representación de un entero
+        elif column_type == "DATE":
+            return "10s"  # Representación de fecha como una cadena de 10 caracteres
+        elif column_type == "FLOAT":
+            return "f"  # Representación de flotante
+        else:
+            raise ValueError(f"Tipo de columna no soportado: {column_type}")
 
-def get_column_format(column_type: str) -> str:
-    """
-    Convierte el tipo de columna (por ejemplo 'VARCHAR[100]', 'INT', 'DATE') a un formato
-    adecuado para ser utilizado en la creación de índices.
-    """
-    if column_type.startswith("VARCHAR"):
-        # Extraer el número de caracteres entre corchetes y devolver el formato
-        length = int(column_type[len("VARCHAR["): -1])  # obtiene el número entre corchetes
-        return f"{length}s"  # Retorna un formato de cadena de longitud variable, ej: 100s
-    elif column_type == "INT":
-        return "i"  # Representación de un entero
-    elif column_type == "DATE":
-        return "10s"  # Representación de fecha como una cadena de 10 caracteres
-    elif column_type == "FLOAT":
-        return "f"  # Representación de flotante
-    else:
-        raise ValueError(f"Tipo de columna no soportado: {column_type}")
+    def create_index(self, table: str, column: str, index_type: str) -> str:
+        """
+        Crea un índice para una columna específica de una tabla ya creada.
+        Se utiliza el tipo de columna transformado en un formato adecuado.
+        """
+        # Verificar que la tabla exista
+        if table not in self.tables:
+            raise ValueError(f"La tabla {table} no existe.")
 
-def create_index(self, table: str, column: str, index_type: str) -> str:
-    """
-    Crea un índice para una columna específica de una tabla ya creada.
-    Se utiliza el tipo de columna transformado en un formato adecuado.
-    """
-    # Verificar que la tabla exista
-    if table not in self.tables:
-        raise ValueError(f"La tabla {table} no existe.")
+        # Verificar que la columna exista
+        if column not in [c["name"] for c in self.tables[table]["schema"].columns]:
+            raise ValueError(f"La columna {column} no existe en {table}.")
 
-    # Verificar que la columna exista
-    if column not in [c["name"] for c in self.tables[table]["schema"].columns]:
-        raise ValueError(f"La columna {column} no existe en {table}.")
+        # Obtener el tipo de la columna (por ejemplo, 'VARCHAR[100]', 'INT', etc.)
+        column_type = next(c["type"] for c in self.tables[table]["schema"].columns if c["name"] == column)
 
-    # Obtener el tipo de la columna (por ejemplo, 'VARCHAR[100]', 'INT', etc.)
-    column_type = next(c["type"] for c in self.tables[table]["schema"].columns if c["name"] == column)
+        # Convertir el tipo de columna a formato (como '10s', 'i', 'f', etc.)
+        column_format = self.get_column_format(column_type)
 
-    # Convertir el tipo de columna a formato (como '10s', 'i', 'f', etc.)
-    column_format = get_column_format(column_type)
+        # Verificar que el tipo de índice es válido
+        if index_type not in INDEX_TYPES:
+            raise ValueError(f"Tipo de índice no soportado: {index_type}")
 
-    # Verificar que el tipo de índice es válido
-    if index_type not in INDEX_TYPES:
-        raise ValueError(f"Tipo de índice no soportado: {index_type}")
+        # Instanciar el índice usando el formato adecuado de la columna
+        ctor = INDEX_TYPES[index_type]
+        idx = ctor(table, column_format)  # Pasamos el formato en lugar de la columna directamente
 
-    # Instanciar el índice usando el formato adecuado de la columna
-    ctor = INDEX_TYPES[index_type]
-    idx = ctor(table, column_format)  # Pasamos el formato en lugar de la columna directamente
+        # Registrar el índice en la tabla
+        self.tables[table]["indexes"][column] = idx
+        self.tables[table]["_index_types"][column] = index_type
 
-    # Registrar el índice en la tabla
-    self.tables[table]["indexes"][column] = idx
-    self.tables[table]["_index_types"][column] = index_type
+        # Poblar el índice
+        for off, row in self._iter_with_offsets(table):
+            key = row.get(column)
+            if key is not None:
+                idx.insert(self._normalize(key), off)
 
-    # Poblar el índice
-    for off, row in self._iter_with_offsets(table):
-        key = row.get(column)
-        if key is not None:
-            idx.add(self._normalize(key), off)
+        # Guardar el catálogo con el nuevo índice
+        self._save_catalog()
 
-    # Guardar el catálogo con el nuevo índice
-    self._save_catalog()
-
-    return f"Índice {index_type} creado en {table}({column}) con formato {column_format}"
+        return f"Índice {index_type} creado en {table}({column}) con formato {column_format}"
 

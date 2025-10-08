@@ -1,3 +1,4 @@
+from math import inf
 from typing import Any, Dict, List, Optional
 from .lexer import tokenize
 
@@ -118,10 +119,11 @@ class SQLParser:
 
     def _parse_create_index(self, w: List[str]) -> Dict[str, Any]:
         """Parsea CREATE INDEX idx_name ON table(column) [USING index_type]."""
-        if len(w) < 6 or w[2].lower() != "on":
+        print(w, len(w),w[4])
+        if len(w) < 8 or w[3].lower() != "on" or w[1].lower() != "index":
             raise ValueError("Sintaxis: CREATE INDEX <idx_name> ON <table> (<column>) [USING <index_type>]")
-        idx_name = w[1]  # nombre del índice (no usado aquí, pero se puede guardar si se necesita)
-        table = w[3]
+        idx_name = w[2]  # nombre del índice (no usado aquí, pero se puede guardar si se necesita)
+        table = w[4]
 
         # Parsear la columna entre paréntesis
         lp = _find(w, "(")
@@ -131,7 +133,7 @@ class SQLParser:
         column = w[lp + 1]
 
         # Tipo de índice (opcional, default 'btree')
-        index_type = "btree"  # por defecto
+        index_type = "sequential"  # por defecto
         ui = _find(w, "using")
         if ui != -1 and ui + 1 < len(w):
             index_type = w[ui + 1].lower()
@@ -145,18 +147,41 @@ class SQLParser:
         }
 
     def _parse_insert(self, w: List[str]) -> Dict[str, Any]:
-        """Parsea INSERT INTO."""
+        """Parsea INSERT INTO con múltiples tuplas."""
         if len(w) < 4 or w[1].lower() != "into":
             raise ValueError("Sintaxis: INSERT INTO <tabla> VALUES (...)")
+
         table = w[2]
+
         if _find(w, "values") == -1:
             raise ValueError("INSERT debe incluir VALUES (...)")
+
         lp = _find(w, "(")
         rp = _find(w, ")")
         if lp == -1 or rp == -1 or rp <= lp + 1:
             raise ValueError("INSERT VALUES requiere paréntesis con valores")
-        raw = [t for t in w[lp + 1 : rp] if t != ","]
-        values = [_lit(t) for t in raw]
+
+        # Aquí identificamos todas las tuplas separadas por comas
+        raw = [t for t in w[lp + 1: rp] if t != ","]
+
+        # Dividimos en tuplas
+        tuples = []
+        current_tuple = []
+        for tok in raw:
+            if tok == ",":
+                if current_tuple:
+                    tuples.append(current_tuple)
+                current_tuple = []
+            else:
+                current_tuple.append(tok)
+        if current_tuple:
+            tuples.append(current_tuple)
+
+        # Parsear cada tupla en valores
+        values = []
+        for tuple_ in tuples:
+            values.append([_lit(t) for t in tuple_])
+
         return {"operation": "insert", "table": table, "values": values}
 
     def _parse_select(self, w: List[str]) -> Dict[str, Any]:
@@ -206,18 +231,24 @@ class SQLParser:
                 op = cond[1]
                 col = cond[0]
                 val = _lit(cond[2])
-                m = {
-                    "=": "eq", "==": "eq", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"
-                }
-                where = {"type": m[op], "column": col, "value": val}
+                # Aquí determinamos si 'val' es un número (int o float) o un string
+                if isinstance(val, (int, float)):
+                    # Si es int o float, usamos float('-inf') o float('inf') para los rangos
+                    if op == "<=":
+                        where = {"type": "range", "column": col, "low": -inf, "high": val}
+                    elif op == ">=":
+                        where = {"type": "range", "column": col, "low": val, "high": inf}
+                else:
+                    # Si es un string, usamos '-inf' y 'inf' como los valores más bajos o más altos
+                    if op == "<=":
+                        where = {"type": "range", "column": col, "low": chr(0), "high": val}
+                    elif op == ">=":
+                        where = {"type": "range", "column": col, "low": val, "high": "{"}
+                # Si es comparación de igualdad simple
+                if op == "=" or op == "==":
+                    m = {"=": "eq", "==": "eq"}
+                    where = {"type": m[op], "column": col, "value": val}
 
-                # Manejar rangos con infinito
-                if op == "<=":
-                    where["low"] = float('-inf')
-                    where["high"] = val
-                elif op == ">=":
-                    where["low"] = val
-                    where["high"] = float('inf')
         # LIMIT
         li = _find(w, "limit")
         if li != -1 and li + 1 < len(w):
