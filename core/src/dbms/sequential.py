@@ -114,7 +114,7 @@ class SequentialFile:
 
         # Si el archivo no existe, crearlo
         if not os.path.exists(self.filename):
-            print(f"El archivo {self.filename} no existe")
+            print(f"El archivo {self.filename} no  existe")
             with open(self.filename, "wb") as f:
                 f.write(struct.pack(HEADER_FORMAT, 0, 0, 0))  # D=0, A=0, head=0
 
