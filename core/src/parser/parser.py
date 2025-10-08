@@ -103,134 +103,15 @@ class SQLParser:
                 raise ValueError(f"Definición de columna inválida: {' '.join(item)}")
             name = item[0]
             ctype = item[1]
+            # Si el tipo es VARCHAR, procesamos el número
+            if ctype.upper() == "VARCHAR" and len(item) == 3:
+                try:
+                    size = int(item[2])
+                    ctype = f"VARCHAR[{size}]"
+                except ValueError:
+                    raise ValueError(f"VARCHAR inválido: {item[2]}")
             columns.append({"name": name, "type": ctype})
             if len(item) >= 4 and item[2].lower() == "index":
                 index_map[name] = item[3].lower()
 
         return {"operation": "create", "table": table, "columns": columns, "index_map": index_map}
-
-    def _parse_create_index(self, w: List[str]) -> Dict[str, Any]:
-        """Parsea CREATE INDEX idx_name ON table(column) [USING index_type]."""
-        if len(w) < 6 or w[2].lower() != "on":
-            raise ValueError("Sintaxis: CREATE INDEX <idx_name> ON <table> (<column>) [USING <index_type>]")
-        idx_name = w[1]  # nombre del índice (no usado aquí, pero se puede guardar si se necesita)
-        table = w[3]
-
-        # Parsear la columna entre paréntesis
-        lp = _find(w, "(")
-        rp = _find(w, ")")
-        if lp == -1 or rp == -1 or rp <= lp + 1:
-            raise ValueError("CREATE INDEX requiere columna entre paréntesis")
-        column = w[lp + 1]
-
-        # Tipo de índice (opcional, default 'btree')
-        index_type = "btree"  # por defecto
-        ui = _find(w, "using")
-        if ui != -1 and ui + 1 < len(w):
-            index_type = w[ui + 1].lower()
-
-        return {
-            "operation": "create_index",
-            "idx_name": idx_name,
-            "table": table,
-            "column": column,
-            "index_type": index_type,
-        }
-
-    def _parse_insert(self, w: List[str]) -> Dict[str, Any]:
-        """Parsea INSERT INTO."""
-        if len(w) < 4 or w[1].lower() != "into":
-            raise ValueError("Sintaxis: INSERT INTO <tabla> VALUES (...)")
-        table = w[2]
-        if _find(w, "values") == -1:
-            raise ValueError("INSERT debe incluir VALUES (...)")
-        lp = _find(w, "(")
-        rp = _find(w, ")")
-        if lp == -1 or rp == -1 or rp <= lp + 1:
-            raise ValueError("INSERT VALUES requiere paréntesis con valores")
-        raw = [t for t in w[lp + 1 : rp] if t != ","]
-        values = [_lit(t) for t in raw]
-        return {"operation": "insert", "table": table, "values": values}
-
-    def _parse_select(self, w: List[str]) -> Dict[str, Any]:
-        # SELECT cols FROM t [WHERE ...] [USING col] [LIMIT n]
-        fi = _find(w, "from")
-        if fi == -1:
-            raise ValueError("SELECT requiere FROM")
-
-        raw_cols = [t for t in w[1:fi] if t != ","]
-        columns = raw_cols or ["*"]
-
-        if fi + 1 >= len(w):
-            raise ValueError("Falta tabla tras FROM")
-        table = w[fi + 1]
-
-        where: Optional[Dict[str, Any]] = None
-        idx_col: Optional[str] = None
-        limit: Optional[int] = None
-
-        # WHERE (acepta: col = v | col < v | col <= v | col > v | col >= v | col BETWEEN a AND b)
-        wi = _find(w, "where")
-        if wi != -1:
-            end = len(w)
-            li = _find(w, "limit")
-            if li != -1:
-                end = min(end, li)
-            cond = [t for t in w[wi + 1: end] if t != ","]
-
-            # BETWEEN (nuevo soporte)
-            bi = _find(cond, "between")
-            if bi == 1 and _find(cond, "and") == 3 and len(cond) >= 5:
-                # cond: [col, between, a, and, b]
-                col = cond[0]
-                lo = _lit(cond[2])
-                hi = _lit(cond[4])
-                where = {
-                    "type": "range",
-                    "column": col,
-                    "low": lo,
-                    "high": hi,
-                    "inc_low": True,
-                    "inc_high": True,
-                }
-            # Comparadores simples
-            elif len(cond) >= 3 and cond[1] in ("=", "==", "<", "<=", ">", ">="):
-                op = cond[1]
-                col = cond[0]
-                val = _lit(cond[2])
-                m = {
-                    "=": "eq", "==": "eq", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"
-                }
-                where = {"type": m[op], "column": col, "value": val}
-
-                # Manejar rangos con infinito
-                if op == "<=":
-                    where["low"] = float('-inf')
-                    where["high"] = val
-                elif op == ">=":
-                    where["low"] = val
-                    where["high"] = float('inf')
-        # LIMIT
-        li = _find(w, "limit")
-        if li != -1 and li + 1 < len(w):
-            limit = int(_lit(w[li + 1]))
-
-        return {
-            "operation": "select",
-            "table": table,
-            "columns": columns,
-            "where": where,  # dict estructurado o None
-            "limit": limit,
-        }
-
-    def _parse_delete(self, w: List[str]) -> Dict[str, Any]:
-        """Parsea DELETE."""
-        if len(w) < 3 or w[1].lower() != "from":
-            raise ValueError("Sintaxis: DELETE FROM <tabla> WHERE ...")
-        table = w[2]
-        wi = _find(w, "where")
-        if wi == -1:
-            raise ValueError("DELETE requiere WHERE col = val")
-        cond = [t for t in w[wi + 1 :] if t != ","]
-        where = {"type": "eq", "column": cond[0], "value": _lit(cond[2])}
-        return {"operation": "delete", "table": table, "where": where}

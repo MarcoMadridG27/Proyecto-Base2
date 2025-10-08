@@ -6,10 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="trabajo">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/dbms/sequential.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/sequential.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/model/record.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/model/record.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/model/schema_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/model/schema_manager.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/parser/executor.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/parser/executor.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/parser/lexer.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/parser/lexer.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/parser/parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/parser/parser.py" afterDir="false" />
     </list>
@@ -163,7 +159,15 @@
       <option name="project" value="LOCAL" />
       <updated>1759854859040</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="trabajo">
+      <option name="closed" value="true" />
+      <created>1759884407896</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1759884407896</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
