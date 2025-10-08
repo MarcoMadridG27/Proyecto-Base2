@@ -20,19 +20,21 @@ class RecordSchema:
             if ctype == "INT":
                 fmt += "i"
             elif ctype == "FLOAT":
-                fmt += "d"
+                fmt += "f"
             elif ctype.startswith("VARCHAR"):
                 # VARCHAR[20] -> 20s
                 try:
-                    n = int(ctype.split("[",1)[1].split("]",1)[0])
-                    if n <= 0: raise ValueError
+                    # Primero aseguramos que el formato está en el tipo correcto
+                    if "[" in ctype and "]" in ctype:
+                        n = int(ctype.split("[", 1)[1].split("]", 1)[0])  # obtiene el número entre corchetes
+                        if n <= 0: raise ValueError
+                        fmt += f"{n}s"  # Retorna un formato de cadena de longitud variable
+                    else:
+                        raise ValueError(f"VARCHAR inválido: {ctype}")
                 except Exception:
                     raise ValueError(f"VARCHAR inválido: {ctype}")
-                fmt += f"{n}s"
             elif ctype == "DATE":
                 fmt += "10s"
-            elif ctype.startswith("ARRAY[FLOAT]"):
-                fmt += "dd"  # 2 doubles (ej. lat/lon)
             else:
                 raise ValueError(f"Tipo no soportado: {ctype}")
         return fmt
@@ -79,11 +81,6 @@ class RecordSchema:
                     fields.append(s.encode("utf-8")[:n].ljust(n, b" "))
                 elif ctype == "DATE":
                     fields.append(self._norm_date(val))
-                elif ctype.startswith("ARRAY[FLOAT]"):
-                    if isinstance(val, (list, tuple)) and len(val) >= 2:
-                        fields.extend([float(val[0]), float(val[1])])
-                    else:
-                        fields.extend([0.0, 0.0])
             except Exception:
                 # fallback defensivo
                 if ctype == "INT":
@@ -95,8 +92,6 @@ class RecordSchema:
                     fields.append(b" " * n)
                 elif ctype == "DATE":
                     fields.append(b"0000-00-00")
-                elif ctype.startswith("ARRAY[FLOAT]"):
-                    fields.extend([0.0, 0.0])
 
         return struct.pack(self.format, *fields)
 
@@ -116,6 +111,4 @@ class RecordSchema:
                 rec[name] = vals[i].decode("utf-8", errors="ignore").rstrip(" "); i += 1
             elif ctype == "DATE":
                 rec[name] = vals[i].decode("utf-8", errors="ignore").strip(); i += 1
-            elif ctype.startswith("ARRAY[FLOAT]"):
-                rec[name] = [float(vals[i]), float(vals[i+1])]; i += 2
         return rec

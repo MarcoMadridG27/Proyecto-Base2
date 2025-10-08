@@ -1,86 +1,139 @@
 from typing import Any, Dict
-# Importa el parser y el manager con rutas ABSOLUTAS (evita problemas de paquete)
-from src.model.parser.parser import SQLParser
+from src.parser.parser import SQLParser
 from src.model.schema_manager import SchemaManager
 
 
 class Executor:
     """
-    Traductor de AST (parseado por SQLParser) a llamadas de SchemaManager.
-    No hace I/O directo de archivos; todo pasa por el manager.
+    Executor que maneja las consultas SQL:
+    - Ejecuta consultas SELECT, INSERT, DELETE.
+    - Gestiona la creación de índices a través de CREATE INDEX.
+    - Interactúa con el SchemaManager para modificar y consultar tablas.
     """
 
-    def __init__(self, data_dir: str = "data"):
+    def __init__(self, data_dir="data"):
+        """
+        Inicializa el Executor con el SchemaManager y el SQLParser.
+
+        Args:
+            schema_manager: Instancia del SchemaManager para manejar las tablas y operaciones.
+            parser: Instancia del SQLParser para analizar las consultas SQL.
+        """
         self.schema_manager = SchemaManager(data_dir)
         self.parser = SQLParser()
 
-    def execute(self, query: str):
+    def execute(self, query: str) -> Any:
         """
-        1) Parsea la consulta a un dict (AST).
-        2) Despacha a la operación correspondiente en el manager.
-        3) Retorna el resultado (mensaje, lista de filas, entero, etc.).
+        Ejecuta una consulta SQL dada, utilizando el SQLParser y el SchemaManager.
+
+        Dependiendo de la operación SQL, se dirige a los métodos correspondientes.
+
+        Args:
+            query (str): Consulta SQL a ejecutar.
+
+        Returns:
+            El resultado de la operación (por ejemplo, el resultado de un SELECT o el número de filas afectadas por un DELETE/INSERT).
         """
-        ast: Dict[str, Any] = self.parser.parse(query)
-        op = ast["operation"]
+        # Parsear la consulta usando el parser
+        ast = self.parser.parse(query)
 
-        # ---------- CREATE ----------
-        if op == "create":
-            # ast: {operation, table, columns, index_map}
-            return self.schema_manager.create_table(
-                ast["table"], ast["columns"], ast.get("index_map")
-            )
+        # Gestionar la operación según el tipo de consulta
+        operation = ast["operation"]
 
-        # ---------- INSERT ----------
-        elif op == "insert":
-            # ast: {operation, table, values(list)}
-            table = ast["table"]
-            values = ast["values"]
-
-            # Convertimos la lista de valores a dict usando el orden del schema
-            schema = self.schema_manager.tables[table]["schema"]
-            cols = [c["name"] for c in schema.columns]
-            row = {cols[i]: (values[i] if i < len(values) else None) for i in range(len(cols))}
-
-            return self.schema_manager.insert(table, row)
-
-        # ---------- SELECT ----------
-        elif op == "select":
-            # ast: {operation, table, columns, where(dict|None), index(str|None), limit(int|None)}
-            return self.schema_manager.select(
-                ast["table"],
-                ast.get("columns"),
-                where=ast.get("where"),
-                index=ast.get("index"),
-                limit=ast.get("limit"),
-            )
-
-        # ---------- DELETE ----------
-        elif op == "delete":
-            # ast: {operation, table, where(dict)}
-            return self.schema_manager.delete(ast["table"], ast.get("where"))
-
+        if operation == "create":
+            return self._handle_create_table(ast)
+        elif operation == "insert":
+            return self._handle_insert(ast)
+        elif operation == "select":
+            return self._handle_select(ast)
+        elif operation == "delete":
+            return self._handle_delete(ast)
+        elif operation == "create_index":
+            return self._handle_create_index(ast)
         else:
-            raise ValueError(f"Operación no soportada: {op}")
+            raise ValueError(f"Operación no soportada: {operation}")
 
+    def _handle_create_table(self, ast: Dict[str, Any]) -> str:
+        """
+        Maneja la creación de una tabla.
 
-# Uso rápido manual:
-if __name__ == "__main__":
-    exe = Executor()
+        Args:
+            ast (dict): El árbol de sintaxis abstracta para la operación CREATE TABLE.
 
-    print(exe.execute("""
-        CREATE TABLE restaurantes (
-            id INT INDEX isam,
-            nombre VARCHAR[20] INDEX btree,
-            fecha DATE
-        )
-    """))
+        Returns:
+            str: Mensaje de éxito o error.
+        """
+        table = ast["table"]
+        columns = ast["columns"]
+        index_map = ast.get("index_map", {})
 
-    print(exe.execute("INSERT INTO restaurantes VALUES (1, 'KFC', '2023-01-01')"))
-    print(exe.execute("INSERT INTO restaurantes VALUES (2, 'PizzaHut', '2023-01-02')"))
+        # Crear la tabla en el SchemaManager
+        return self.schema_manager.create_table(table, columns, index_map)
 
-    # SELECT con igualdad (usa índice si existe en 'id' o si dices USING id)
-    print(exe.execute("SELECT id,nombre FROM restaurantes WHERE id = 2 LIMIT 5"))
-    print(exe.execute("SELECT * FROM restaurantes WHERE id = 2 USING id LIMIT 5"))
+    def _handle_insert(self, ast: Dict[str, Any]) -> int:
+        """
+        Maneja la operación INSERT INTO.
 
-    # Full scan
-    print(exe.execute("SELECT * FROM restaurantes"))
+        Args:
+            ast (dict): El árbol de sintaxis abstracta para la operación INSERT.
+
+        Returns:
+            int: El offset de la fila insertada.
+        """
+        table = ast["table"]
+        values = ast["values"]
+
+        # Insertar la fila en la tabla
+        return self.schema_manager.insert(table, values)
+
+    def _handle_select(self, ast: Dict[str, Any]) -> list[Dict[str, Any]]:
+        """
+        Maneja la operación SELECT.
+
+        Args:
+            ast (dict): El árbol de sintaxis abstracta para la operación SELECT.
+
+        Returns:
+            list: Los registros que coinciden con la consulta SELECT.
+        """
+        table = ast["table"]
+        columns = ast["columns"]
+        where = ast.get("where")
+        limit = ast.get("limit")
+
+        # Ejecutar el SELECT en el SchemaManager
+        return self.schema_manager.select(table, columns, where, limit)
+
+    def _handle_delete(self, ast: Dict[str, Any]) -> int:
+        """
+        Maneja la operación DELETE.
+
+        Args:
+            ast (dict): El árbol de sintaxis abstracta para la operación DELETE.
+
+        Returns:
+            int: La cantidad de filas borradas.
+        """
+        table = ast["table"]
+        where = ast["where"]
+
+        # Ejecutar el DELETE en el SchemaManager
+        return self.schema_manager.delete(table, where)
+
+    def _handle_create_index(self, ast: Dict[str, Any]) -> str:
+        """
+        Maneja la operación CREATE INDEX.
+
+        Args:
+            ast (dict): El árbol de sintaxis abstracta para la operación CREATE INDEX.
+
+        Returns:
+            str: Mensaje de éxito o error al crear el índice.
+        """
+        idx_name = ast["idx_name"]
+        table = ast["table"]
+        column = ast["column"]
+        index_type = ast["index_type"]
+
+        # Crear el índice en el SchemaManager
+        return self.schema_manager.create_index(table, column, index_type)

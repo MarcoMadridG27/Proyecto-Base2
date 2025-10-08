@@ -1,366 +1,335 @@
 import os
 import struct
 import math
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple, List
 
-# ------------------ Punteros y convenciones ------------------
-
-DELETED = -1  # next_ptr == -1 => tombstone (borrado lógico)
+# ============================================================
+# Convención de punteros (1-based)
+# ============================================================
+DELETED_PTR = -1
 
 def dptr(i: int) -> int:
-    """Puntero a D (1-based)."""
+    """ Convierte un índice a puntero de la región principal (D). """
     if i < 1:
-        raise ValueError("dptr(i) requiere i>=1")
+        raise ValueError("d(i) requiere i >= 1")
     return i
 
 def aptr(i: int) -> int:
-    """Puntero a A (1-based). a(1)=-2, a(2)=-3, ... Usamos negativos <= -2."""
+    """ Convierte un índice a puntero de la región auxiliar (A). """
     if i < 1:
-        raise ValueError("aptr(i) requiere i>=1")
-    return -(i + 1)
+        raise ValueError("a(i) requiere i >= 1")
+    return -(i + 1)  # evita colisión con -1
 
 def is_end(p: int) -> bool:
-    """Fin de lista lógica."""
+    """ Verifica si el puntero es el final de la lista (0). """
     return p == 0
 
-def loc(p: int) -> Tuple[bool, int]:
-    """
-    Convierte un puntero entero (next_ptr) a (is_aux, idx 1-based).
-    Lanza si p es fin o tombstone.
-    """
-    if p == 0 or p == DELETED:
-        raise ValueError("puntero fin o tombstone no tiene ubicación")
+def ptr_to_loc(p: int) -> Tuple[bool, int]:
+    """ Convierte puntero a (is_aux, idx) para registros válidos. """
+    if p == 0 or p == DELETED_PTR:
+        raise ValueError("Puntero fin/eliminado no tiene ubicación de registro")
     return (False, p) if p > 0 else (True, -p - 1)
 
-# ------------------ Layout binario ------------------
-# Entrada: key:int32, offset:uint64, next_ptr:int32
-ENTRY_FMT = "<iQi"
-ENTRY_SIZE = struct.calcsize(ENTRY_FMT)
+def label(p: int) -> str:
+    """ Retorna una etiqueta legible del puntero. """
+    if p == 0: return "END"
+    if p == DELETED_PTR: return "DEL"
+    return f"d({p})" if p > 0 else f"a({-p-1})"
 
-# Header: main_count:int32, aux_count:int32, head_ptr:int32
-HDR_FMT = "<iii"
-HDR_SIZE = struct.calcsize(HDR_FMT)
+# ============================================================
+# Layout de registro (payload + next_ptr)
+# ============================================================
+EMP_FORMAT = ()  # Formato para (offset(en memoria secundaria), value(key), next_ptr)
+RECORD_SIZE = ()
 
-
-class SFEntry:
-    """Entrada (key, offset, next_ptr)."""
-    __slots__ = ("key", "offset", "next_ptr")
-
-    def __init__(self, key: int, offset: int, next_ptr: int = 0):
-        if offset < 0:
-            raise ValueError("offset debe ser no-negativo")
-        self.key = int(key)
-        self.offset = int(offset)  # guardamos offsets como uint64
-        self.next_ptr = int(next_ptr)
+class EntrySF:
+    """ Registro con un valor y puntero al siguiente en la lista lógica. """
+    def __init__(self, offset: int, value, next_ptr: int = 0):
+        self.offset = offset
+        self.value = value
+        self.next_ptr = next_ptr
 
     def pack(self) -> bytes:
-        """Empaqueta a bytes según ENTRY_FMT."""
-        return struct.pack(ENTRY_FMT, int(self.key), int(self.offset), int(self.next_ptr))
+        """ Empaqueta el registro en formato binario. """
+        return struct.pack(EMP_FORMAT, self.offset, self.value.encode('utf-8'), self.next_ptr)
 
     @staticmethod
-    def unpack(buf: bytes) -> "SFEntry":
-        """Crea SFEntry desde bytes."""
-        k, off, nxt = struct.unpack(ENTRY_FMT, buf)
-        return SFEntry(int(k), int(off), int(nxt))
+    def unpack(buf: bytes) -> "EntrySF":
+        """ Desempaqueta un registro desde bytes. """
+        offset, value, next_ptr = struct.unpack(EMP_FORMAT, buf)
+        return EntrySF(offset, value.decode('utf-8'), next_ptr)
 
-    def deleted(self) -> bool:
-        """True si está marcado como tombstone."""
-        return self.next_ptr == DELETED
+    def is_deleted(self) -> bool:
+        """ Verifica si el registro está marcado como eliminado (tombstone). """
+        return self.next_ptr == DELETED_PTR
 
+# ============================================================
+# Header: main_count, aux_count, head_ptr
+# ============================================================
+HEADER_FORMAT = "<iii"
+HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
 class SequentialFile:
     """
-    Índice secuencial D/A persistente:
-      - insert/add: siempre escribe en A y encadena en orden por key
-      - search: usa binaria en D y luego camina la lista lógica
-      - reorganize: compacta D en orden y vacía A según umbral log2
+    Archivo secuencial con:
+      - Región principal (D)
+      - Región auxiliar (A)
+      - Lista lógica ordenada enlazada por next_ptr
     """
+    def __init__(self, table: str, column_type: str):
+        """ Inicializa el archivo secuencial con el tipo de columna (formato). """
+        # Crear un formato para el registro con el tipo de columna adecuado.
+        self.column_type = column_type  # Esto es como '100s' o 'i'
+        self.filename = os.path.join("data_index", f"{table}_index.dat")
+        os.makedirs("data_index", exist_ok=True)
 
-    def __init__(self, table_name: str, column: str, index_dir: str = "data/indexes"):
-        os.makedirs(index_dir, exist_ok=True)
-        self.path = os.path.join(index_dir, f"{table_name}__{column}.sidx")
-        if not os.path.exists(self.path):
-            with open(self.path, "wb") as f:
-                f.write(struct.pack(HDR_FMT, 0, 0, 0))  # main=0, aux=0, head=0
+        # Definir formato de registro según la columna (ejemplo: 'i' para INT o '100s' para VARCHAR)
+        EMP_FORMAT = f"<i{column_type}i"  # offset, value, next_ptr
+        self.RECORD_SIZE = struct.calcsize(EMP_FORMAT)
 
-    # ------------------ Header I/O ------------------
+        # Si el archivo no existe, crearlo
+        if not os.path.exists(self.filename):
+            with open(self.filename, "wb") as f:
+                f.write(struct.pack(HEADER_FORMAT, 0, 0, 0))  # D=0, A=0, head=0
 
-    def _hdr_get(self) -> Tuple[int, int, int]:
-        """Lee (main_count, aux_count, head_ptr)."""
-        with open(self.path, "rb") as f:
+    # Header I/O
+    def _get_header(self) -> Tuple[int, int, int]:
+        """ Obtiene la cabecera del archivo. """
+        with open(self.filename, "rb") as f:
             f.seek(0)
-            m, a, h = struct.unpack(HDR_FMT, f.read(HDR_SIZE))
-            return int(m), int(a), int(h)
+            return struct.unpack(HEADER_FORMAT, f.read(HEADER_SIZE))
 
-    def _hdr_set(self, m: int, a: int, h: int) -> None:
-        """Escribe header asegurando ints."""
-        with open(self.path, "r+b") as f:
+    def _set_header(self, main_count: int, aux_count: int, head_ptr: int):
+        """ Establece la cabecera del archivo. """
+        with open(self.filename, "r+b") as f:
             f.seek(0)
-            f.write(struct.pack(HDR_FMT, int(m), int(a), int(h)))
+            f.write(struct.pack(HEADER_FORMAT, main_count, aux_count, head_ptr))
 
-    # ------------------ Offsets de D/A ------------------
+    # Offsets para las regiones
+    def _offs_d(self, i: int) -> int:
+        return HEADER_SIZE + (i - 1) * self.RECORD_SIZE
 
-    def _off_d(self, i: int) -> int:
-        """Offset byte de d(i) (1-based)."""
-        return HDR_SIZE + (i - 1) * ENTRY_SIZE
+    def _offs_a(self, i: int, base_main: Optional[int] = None) -> int:
+        if base_main is None:
+            base_main, _, _ = self._get_header()
+        return HEADER_SIZE + base_main * self.RECORD_SIZE + (i - 1) * self.RECORD_SIZE
 
-    def _off_a(self, i: int, base: Optional[int] = None) -> int:
-        """Offset byte de a(i) (1-based). base = main_count estable para lecturas."""
-        if base is None:
-            base, _, _ = self._hdr_get()
-        return HDR_SIZE + base * ENTRY_SIZE + (i - 1) * ENTRY_SIZE
+    # Registro I/O
+    def _read_rec(self, is_aux: bool, idx: int, base_main: Optional[int] = None) -> EntrySF:
+        """ Lee un registro desde el archivo (en D o A). """
+        with open(self.filename, "rb") as f:
+            f.seek(self._offs_a(idx, base_main) if is_aux else self._offs_d(idx))
+            return EntrySF.unpack(f.read(self.RECORD_SIZE))
 
-    # ------------------ Entrada I/O ------------------
+    def _write_rec(self, is_aux: bool, idx: int, rec: EntrySF, base_main: Optional[int] = None):
+        """ Escribe un registro en el archivo (en D o A). """
+        with open(self.filename, "r+b") as f:
+            f.seek(self._offs_a(idx, base_main) if is_aux else self._offs_d(idx))
+            f.write(rec.pack())
 
-    def _read(self, is_aux: bool, idx: int, base: Optional[int] = None) -> SFEntry:
-        """Lee entrada de D/A (1-based)."""
-        with open(self.path, "rb") as f:
-            f.seek(self._off_a(idx, base) if is_aux else self._off_d(idx))
-            return SFEntry.unpack(f.read(ENTRY_SIZE))
-
-    def _write(self, is_aux: bool, idx: int, e: SFEntry, base: Optional[int] = None) -> None:
-        """Escribe entrada de D/A (1-based)."""
-        with open(self.path, "r+b") as f:
-            f.seek(self._off_a(idx, base) if is_aux else self._off_d(idx))
-            f.write(e.pack())
-
-    # ------------------ Búsqueda binaria en D ------------------
-
-    def _lb(self, key: int) -> int:
-        """
-        lower_bound en D: primer i con d(i).key >= key.
-        Si no hay, retorna m+1. D debe estar ordenado tras reorganize().
-        """
-        m, _, _ = self._hdr_get()
-        l, r, ans = 1, m, m + 1
+    # Búsqueda binaria en la región D (principal)
+    def _lower_bound_d(self, key) -> int:
+        """ Encuentra la primera posición en D donde el valor es mayor o igual a la clave. """
+        main_count, _, _ = self._get_header()
+        l, r, ans = 1, main_count, main_count + 1
         while l <= r:
-            mid = (l + r) // 2
-            e = self._read(False, mid, m)
-            if e.key >= key:
-                ans = mid
-                r = mid - 1
+            m = (l + r) // 2
+            rec = self._read_rec(False, m, main_count)
+            if rec.value >= key:
+                ans = m
+                r = m - 1
             else:
-                l = mid + 1
+                l = m + 1
         return ans
 
-    # ================== API pública esperada por el manager ==================
+    def range_search(self, lo, hi) -> List[int]:
+        if lo > hi:
+            lo, hi = hi, lo
+        main_count, _, head_ptr = self._get_header()
+        res: List[int] = []
+        if head_ptr == 0:
+            return res
 
-    def add(self, key: int, offset: int) -> None:
-        """Alias público para insertar una pareja (key, offset)."""
-        self._insert(SFEntry(key, offset))
-
-    def search(self, key: int) -> List[int]:
-        """
-        Devuelve lista de offsets que tienen exactamente 'key'.
-        Si no hay, lista vacía. Esto es lo que usa tu SchemaManager.
-        """
-        m, _, h = self._hdr_get()
-        if h == 0:
-            return []
-
-        # 1) intento de hit directo en D
-        lb = self._lb(key)
-        if 1 <= lb <= m:
-            e = self._read(False, lb, m)
-            if not e.deleted() and e.key == key:
-                return [e.offset]
-
-        # 2) arrancar desde sucesor del predecesor vivo en D; si no hay, head
-        j = min(lb - 1, m)
+        # 1) binaria en D con 'lo' para ubicar predecesor
+        lb = self._lower_bound_d(lo)
+        j = min(lb - 1, main_count)
         while j >= 1:
-            dj = self._read(False, j, m)
-            if not dj.deleted():
-                start = dj.next_ptr
+            cand = self._read_rec(False, j, main_count)
+            if not cand.is_deleted():
+                start_ptr = cand.next_ptr
                 break
             j -= 1
         else:
-            start = h
+            start_ptr = head_ptr
 
-        out: List[int] = []
-        cur = start
+        # 2) caminar hasta superar hi
+        cur = start_ptr
         while not is_end(cur):
-            a1, i1 = loc(cur)
-            node = self._read(a1, i1, m)
-            if node.deleted():
+            is_aux, idx = ptr_to_loc(cur)
+            node = self._read_rec(is_aux, idx, main_count)
+            if node.is_deleted():
                 cur = node.next_ptr
                 continue
-            if node.key > key:
+            if node.value > hi:
                 break
-            if node.key == key:
-                out.append(node.offset)
+            if node.value >= lo:
+                res.append(node.offset)
             cur = node.next_ptr
-        return out
+        return res
 
-    # ================== Implementación interna de inserción ==================
+    def search(self, key) -> Optional[int]:
+        """ Busca un registro por clave en la lista lógica. """
+        main_count, _, head_ptr = self._get_header()
+        if head_ptr == 0:
+            return None
 
-    def _insert(self, e: SFEntry) -> None:
+        lb = self._lower_bound_d(key)
+        cur = head_ptr
+        while cur != 0:
+            is_aux, idx = ptr_to_loc(cur)
+            node = self._read_rec(is_aux, idx, main_count)
+            if node.is_deleted():
+                cur = node.next_ptr
+                continue
+            if node.value == key:
+                return node.offset
+            if node.value > key:
+                return None
+            cur = node.next_ptr
+        return None
+
+    def insert(self, col_value, off_set):
         """
-        Inserta SIEMPRE en A y encadena en orden por key.
-        Reorganiza cuando A supera floor(log2(|D|+1)).
+        Inserta SIEMPRE en AUX y lo encadena en la posición ordenada:
+        - binaria en D para obtener el más cercano a la izquierda
+        - caminar por la cadena lógica mientras cur.codigo < emp.codigo
+        - enlazar prev -> new -> cur
         """
-        m, a, h = self._hdr_get()
+        main_count, aux_count, head_ptr = self._get_header()
+        emp= EntrySF(off_set,col_value)
+        # 0) guardar en AUX (1-based)
+        new_idx = aux_count + 1
+        emp.next_ptr = 0
+        self._write_rec(True, new_idx, emp, main_count)
+        new_ptr = aptr(new_idx)
+        aux_count += 1
 
-        # 1) persistir en A
-        idx = a + 1
-        e.next_ptr = 0
-        self._write(True, idx, e, m)
-        a += 1
-        newp = aptr(idx)
-
-        # 2) lista vacía
-        if h == 0:
-            self._hdr_set(m, a, newp)
-            self._maybe_reorg()
+        # lista vacía
+        if head_ptr == 0:
+            head_ptr = new_ptr
+            self._set_header(main_count, aux_count, head_ptr)
+            self._maybe_reorganize()
             return
 
-        # 3) predecesor en D (saltando borrados)
-        lb = self._lb(e.key)
-        j = min(lb - 1, m)
+        # 1) binaria en D por emp.codigo
+        lb = self._lower_bound_d(emp.value)
+        j = min(lb - 1, main_count)
+        # retroceder si d(j) está borrado
         while j >= 1:
-            dj = self._read(False, j, m)
-            if not dj.deleted():
+            cand = self._read_rec(False, j, main_count)
+            if not cand.is_deleted():
                 break
             j -= 1
 
-        # 4) decidir prev y cur
+        # 2) decidir prev_ptr y cur_ptr
         if j >= 1:
             prev_ptr = dptr(j)
-            cur_ptr = self._read(False, j, m).next_ptr
+            cur_ptr = self._read_rec(False, j, main_count).next_ptr
         else:
-            head_entry = self._read(*loc(h), m)
-            if e.key <= head_entry.key:
-                # insertar como nuevo head
-                e.next_ptr = h
-                self._write(True, idx, e, m)
-                self._hdr_set(m, a, newp)
-                self._maybe_reorg()
+            # podría ir al inicio si <= head
+            h_is_aux, h_idx = ptr_to_loc(head_ptr)
+            head = self._read_rec(h_is_aux, h_idx, main_count)
+            if emp.value <= head.value:
+                emp.next_ptr = head_ptr
+                self._write_rec(True, new_idx, emp, main_count)
+                head_ptr = new_ptr
+                self._set_header(main_count, aux_count, head_ptr)
+                self._maybe_reorganize()
                 return
             prev_ptr = 0
-            cur_ptr = h
+            cur_ptr = head_ptr
 
-        # 5) avanzar por punteros
+        # 3) avanzar por punteros mientras cur.codigo < emp.codigo
         while not is_end(cur_ptr):
-            a1, i1 = loc(cur_ptr)
-            node = self._read(a1, i1, m)
-            if node.deleted():
+            is_aux, idx = ptr_to_loc(cur_ptr)
+            node = self._read_rec(is_aux, idx, main_count)
+            if node.is_deleted():  # defensivo
                 cur_ptr = node.next_ptr
                 continue
-            if node.key < e.key:
+            if node.value < emp.value:
                 prev_ptr = cur_ptr
                 cur_ptr = node.next_ptr
             else:
                 break
 
-        # 6) enlazar prev -> new -> cur
-        e.next_ptr = cur_ptr
-        self._write(True, idx, e, m)
+        # 4) enlazar prev -> new -> cur
+        emp.next_ptr = cur_ptr
+        self._write_rec(True, new_idx, emp, main_count)
 
         if prev_ptr == 0:
-            h = newp
+            head_ptr = new_ptr
         else:
-            pa, pi = loc(prev_ptr)
-            prev = self._read(pa, pi, m)
-            prev.next_ptr = newp
-            self._write(pa, pi, prev, m)
+            p_is_aux, p_idx = ptr_to_loc(prev_ptr)
+            prev_node = self._read_rec(p_is_aux, p_idx, main_count)
+            prev_node.next_ptr = new_ptr
+            self._write_rec(p_is_aux, p_idx, prev_node, main_count)
 
-        self._hdr_set(m, a, h)
-        self._maybe_reorg()
+        self._set_header(main_count, aux_count, head_ptr)
+        self._maybe_reorganize()
 
-    # ================== Mantenimiento (reorganización) ==================
+    def delete(self, key) -> int:
+        """ Elimina un registro lógico marcándolo como tombstone. """
+        main_count, aux_count, head_ptr = self._get_header()
+        if head_ptr == 0:
+            return False
 
-    def _maybe_reorg(self) -> None:
-        """Umbral simple: cuando A > floor(log2(|D|+1)), ejecuta reorganize()."""
-        m, a, _ = self._hdr_get()
-        k = int(math.log2(max(1, m + 1)))
-        if a > k:
+        lb = self._lower_bound_d(key)
+        cur_ptr = head_ptr
+        while cur_ptr != 0:
+            is_aux, idx = ptr_to_loc(cur_ptr)
+            node = self._read_rec(is_aux, idx, main_count)
+
+            if node.value == key:
+                node.next_ptr = DELETED_PTR
+                self._write_rec(is_aux, idx, node, main_count)
+                return node.offset
+
+            cur_ptr = node.next_ptr
+        return 0
+
+    def _maybe_reorganize(self):
+        main_count, aux_count, _ = self._get_header()
+        # Política simple: cuando AUX supera floor(log2(main_count+1))
+        k = int(math.log2(max(1, main_count + 1)))
+        if aux_count > k:
             self.reorganize()
 
-    def reorganize(self) -> None:
-        """
-        Reconstruye D siguiendo la lista lógica desde head, ignora tombstones,
-        y deja A vacía. Head queda en d(1) o 0 si está vacío.
-        """
-        m, a, h = self._hdr_get()
-        if h == 0:
-            self._hdr_set(0, 0, 0)
+    def reorganize(self):
+        """Reconstruye D leyendo desde head y siguiendo punteros en orden lógico."""
+        main_count, aux_count, head_ptr = self._get_header()
+        if head_ptr == 0:
+            self._set_header(0, 0, 0)
             return
 
-        base = m  # fija la base para leer A correctamente
-        ordered: List[SFEntry] = []
-        cur = h
+        base_main = main_count  # fija la base para leer A correctamente
+        ordered: List[EntrySF] = []
+        cur = head_ptr
         seen = 0
-        cap = m + a + 8  # límite de seguridad anti-bucle
-
+        cap = base_main + aux_count + 10
         while not is_end(cur) and seen < cap:
-            a1, i1 = loc(cur)
-            e = self._read(a1, i1, base)
-            if not e.deleted():
-                ordered.append(e)
-            cur = e.next_ptr
+            is_aux, idx = ptr_to_loc(cur)
+            node = self._read_rec(is_aux, idx, base_main)
+            if not node.is_deleted():
+                ordered.append(node)
+            cur = node.next_ptr
             seen += 1
 
-        # Escribir D ordenado y reencadenado d(1)->d(2)->...->END
-        newm = len(ordered)
-        with open(self.path, "r+b") as f:
-            for i, e in enumerate(ordered, start=1):
-                e.next_ptr = dptr(i + 1) if i < newm else 0
-                f.seek(self._off_d(i))
-                f.write(e.pack())
+        # escribir compactado en D como d(1..N) y encadenar d(i)->d(i+1)
+        new_main = len(ordered)
+        with open(self.filename, "r+b") as f:
+            for i, rec in enumerate(ordered, start=1):
+                rec.next_ptr = dptr(i + 1) if i < new_main else 0
+                f.seek(self._offs_d(i))
+                f.write(rec.pack())
 
-        self._hdr_set(newm, 0, dptr(1) if newm >= 1 else 0)
-
-    # ================== (Opcional) Borrado en el índice ==================
-
-    def remove(self, key: int, offset: Optional[int] = None) -> int:
-        """
-        Quita entradas del índice para 'key'. Si 'offset' se especifica, solo esa.
-        Devuelve cuántas entradas se marcaron como DELETED y se desenlazaron.
-        Tu SchemaManager hoy no llama a esto; lo dejo por si lo quieres usar.
-        """
-        m, a, h = self._hdr_get()
-        if h == 0:
-            return 0
-
-        lb = self._lb(key)
-        j = min(lb - 1, m)
-        while j >= 1:
-            dj = self._read(False, j, m)
-            if not dj.deleted():
-                break
-            j -= 1
-
-        prev_ptr = dptr(j) if j >= 1 else 0
-        cur_ptr = self._read(False, j, m).next_ptr if j >= 1 else h
-        removed = 0
-
-        while not is_end(cur_ptr):
-            a1, i1 = loc(cur_ptr)
-            node = self._read(a1, i1, m)
-
-            if node.key > key:
-                break
-
-            if node.key == key and (offset is None or node.offset == offset):
-                nxt = node.next_ptr
-                # desenlazar
-                if prev_ptr == 0:
-                    h = nxt
-                else:
-                    pa, pi = loc(prev_ptr)
-                    prev = self._read(pa, pi, m)
-                    prev.next_ptr = nxt
-                    self._write(pa, pi, prev, m)
-                # tombstone
-                node.next_ptr = DELETED
-                self._write(a1, i1, node, m)
-                removed += 1
-                cur_ptr = nxt
-                if offset is not None:
-                    break
-                continue
-
-            prev_ptr = cur_ptr
-            cur_ptr = node.next_ptr
-
-        self._hdr_set(m, a, h)
-        return removed
+        self._set_header(new_main, 0, dptr(1) if new_main >= 1 else 0)

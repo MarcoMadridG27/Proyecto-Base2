@@ -1,8 +1,5 @@
-# parser/parser.py
 from typing import Any, Dict, List, Optional
 from .lexer import tokenize
-
-# ---------- helpers básicos ----------
 
 def _unquote(s: str) -> str:
     """Quita comillas simples/dobles si existen."""
@@ -13,7 +10,7 @@ def _unquote(s: str) -> str:
 
 def _lit(tok: str) -> Any:
     """
-    Literal a Python:
+    Convierte los literales en Python:
       - "10" -> int(10)
       - "10.5" -> float(10.5)
       - "'Zoe'" o "Zoe" -> "Zoe" (sin comillas en el primer caso)
@@ -41,19 +38,19 @@ def _find(words: List[str], target: str) -> int:
             return i
     return -1
 
-# ---------- parser principal ----------
-
 class SQLParser:
     """
-    SQL MUY reducido -> AST (diccionario).
+    SQL Parser reducido -> AST (diccionario).
     Soporta:
       - CREATE TABLE t (col TYPE [INDEX kind], ...)
+      - CREATE INDEX idx_name ON table(column) [USING index_type]
       - INSERT INTO t VALUES (v1, v2, ...)
-      - SELECT cols FROM t [WHERE col {=,<,<=,>,>=} val | col BETWEEN a AND b] [USING col] [LIMIT n]
+      - SELECT cols FROM t [WHERE col {=,<,<=,>,>=} val | col BETWEEN a AND b] [LIMIT n]
       - DELETE FROM t WHERE col = val
     """
 
     def parse(self, query: str) -> Dict[str, Any]:
+        """Parses an SQL query and returns the corresponding AST (Abstract Syntax Tree)."""
         toks = tokenize(query)
         words = [v for (_k, v) in toks]
         if not words:
@@ -61,7 +58,10 @@ class SQLParser:
 
         first = words[0].lower()
         if first == "create":
-            return self._parse_create(words)
+            if len(words) > 1 and words[1].lower() == "index":
+                return self._parse_create_index(words)
+            elif len(words) > 1 and words[1].lower() == "table":
+                return self._parse_create(words)
         if first == "insert":
             return self._parse_insert(words)
         if first == "select":
@@ -70,10 +70,8 @@ class SQLParser:
             return self._parse_delete(words)
         raise ValueError(f"Sentencia no soportada: {first}")
 
-    # ---------- CREATE ----------
-
     def _parse_create(self, w: List[str]) -> Dict[str, Any]:
-        # CREATE TABLE <name> ( col TYPE [INDEX kind], ... )
+        """Parsea CREATE TABLE."""
         if len(w) < 3 or w[1].lower() != "table":
             raise ValueError("Sintaxis: CREATE TABLE <name> (...)")
         table = w[2]
@@ -84,44 +82,68 @@ class SQLParser:
             raise ValueError("CREATE TABLE requiere definición de columnas entre ()")
         body = w[lp + 1 : rp]
 
-        # separar por comas en items
-        items: List[List[str]] = []
-        cur: List[str] = []
-        for tok in body:
-            if tok == ",":
-                if cur:
-                    items.append(cur)
-                cur = []
-            else:
-                cur.append(tok)
-        if cur:
-            items.append(cur)
-
         columns: List[Dict[str, str]] = []
         index_map: Dict[str, str] = {}
 
-        for it in items:
-            # it: ["id","INT"]  o  ["nombre","VARCHAR[20]","INDEX","btree"]
-            if len(it) < 2:
-                raise ValueError(f"Columna mal definida: {' '.join(it)}")
-            name = it[0]
-            ctype = it[1]
+        # Parsear las columnas
+        current: List[str] = []
+        items: List[List[str]] = []
+        for tok in body:
+            if tok == ",":
+                if current:
+                    items.append(current)
+                current = []
+            else:
+                current.append(tok)
+        if current:
+            items.append(current)
+
+        for item in items:
+            if len(item) < 2:
+                raise ValueError(f"Definición de columna inválida: {' '.join(item)}")
+            name = item[0]
+            ctype = item[1]
             columns.append({"name": name, "type": ctype})
-            if len(it) >= 4 and it[2].lower() == "index":
-                index_map[name] = it[3].lower()
+            if len(item) >= 4 and item[2].lower() == "index":
+                index_map[name] = item[3].lower()
 
         return {"operation": "create", "table": table, "columns": columns, "index_map": index_map}
 
-    # ---------- INSERT ----------
+    def _parse_create_index(self, w: List[str]) -> Dict[str, Any]:
+        """Parsea CREATE INDEX idx_name ON table(column) [USING index_type]."""
+        if len(w) < 6 or w[2].lower() != "on":
+            raise ValueError("Sintaxis: CREATE INDEX <idx_name> ON <table> (<column>) [USING <index_type>]")
+        idx_name = w[1]  # nombre del índice (no usado aquí, pero se puede guardar si se necesita)
+        table = w[3]
+
+        # Parsear la columna entre paréntesis
+        lp = _find(w, "(")
+        rp = _find(w, ")")
+        if lp == -1 or rp == -1 or rp <= lp + 1:
+            raise ValueError("CREATE INDEX requiere columna entre paréntesis")
+        column = w[lp + 1]
+
+        # Tipo de índice (opcional, default 'btree')
+        index_type = "btree"  # por defecto
+        ui = _find(w, "using")
+        if ui != -1 and ui + 1 < len(w):
+            index_type = w[ui + 1].lower()
+
+        return {
+            "operation": "create_index",
+            "idx_name": idx_name,
+            "table": table,
+            "column": column,
+            "index_type": index_type,
+        }
 
     def _parse_insert(self, w: List[str]) -> Dict[str, Any]:
-        # INSERT INTO <t> VALUES (v1, v2, ...)
+        """Parsea INSERT INTO."""
         if len(w) < 4 or w[1].lower() != "into":
             raise ValueError("Sintaxis: INSERT INTO <tabla> VALUES (...)")
         table = w[2]
         if _find(w, "values") == -1:
-            raise ValueError("INSERT requiere VALUES (...)")
-
+            raise ValueError("INSERT debe incluir VALUES (...)")
         lp = _find(w, "(")
         rp = _find(w, ")")
         if lp == -1 or rp == -1 or rp <= lp + 1:
@@ -129,8 +151,6 @@ class SQLParser:
         raw = [t for t in w[lp + 1 : rp] if t != ","]
         values = [_lit(t) for t in raw]
         return {"operation": "insert", "table": table, "values": values}
-
-    # ---------- SELECT (con rangos) ----------
 
     def _parse_select(self, w: List[str]) -> Dict[str, Any]:
         # SELECT cols FROM t [WHERE ...] [USING col] [LIMIT n]
@@ -153,15 +173,12 @@ class SQLParser:
         wi = _find(w, "where")
         if wi != -1:
             end = len(w)
-            ui = _find(w, "using")
             li = _find(w, "limit")
-            if ui != -1:
-                end = min(end, ui)
             if li != -1:
                 end = min(end, li)
-            cond = [t for t in w[wi + 1 : end] if t != ","]
+            cond = [t for t in w[wi + 1: end] if t != ","]
 
-            # BETWEEN
+            # BETWEEN (nuevo soporte)
             bi = _find(cond, "between")
             if bi == 1 and _find(cond, "and") == 3 and len(cond) >= 5:
                 # cond: [col, between, a, and, b]
@@ -181,14 +198,18 @@ class SQLParser:
                 op = cond[1]
                 col = cond[0]
                 val = _lit(cond[2])
-                m = {"=": "eq", "==": "eq", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
+                m = {
+                    "=": "eq", "==": "eq", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"
+                }
                 where = {"type": m[op], "column": col, "value": val}
 
-        # USING
-        ui = _find(w, "using")
-        if ui != -1 and ui + 1 < len(w):
-            idx_col = w[ui + 1]
-
+                # Manejar rangos con infinito
+                if op == "<=":
+                    where["low"] = float('-inf')
+                    where["high"] = val
+                elif op == ">=":
+                    where["low"] = val
+                    where["high"] = float('inf')
         # LIMIT
         li = _find(w, "limit")
         if li != -1 and li + 1 < len(w):
@@ -198,24 +219,18 @@ class SQLParser:
             "operation": "select",
             "table": table,
             "columns": columns,
-            "where": where,     # dict estructurado o None
-            "index": idx_col,   # columna cuyo índice preferimos usar
+            "where": where,  # dict estructurado o None
             "limit": limit,
         }
 
-    # ---------- DELETE ----------
-
     def _parse_delete(self, w: List[str]) -> Dict[str, Any]:
-        # DELETE FROM t WHERE col = val
+        """Parsea DELETE."""
         if len(w) < 3 or w[1].lower() != "from":
             raise ValueError("Sintaxis: DELETE FROM <tabla> WHERE ...")
         table = w[2]
         wi = _find(w, "where")
         if wi == -1:
             raise ValueError("DELETE requiere WHERE col = val")
-
         cond = [t for t in w[wi + 1 :] if t != ","]
-        if len(cond) < 3 or cond[1] not in ("=", "=="):
-            raise ValueError("WHERE debe ser 'col = valor'")
         where = {"type": "eq", "column": cond[0], "value": _lit(cond[2])}
         return {"operation": "delete", "table": table, "where": where}
