@@ -200,6 +200,7 @@ class SQLParser:
                     "inc_low": True,
                     "inc_high": True,
                 }
+
             # Comparadores simples
             elif len(cond) >= 3 and cond[1] in ("=", "==", "<", "<=", ">", ">="):
                 op = cond[1]
