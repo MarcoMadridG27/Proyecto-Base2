@@ -163,25 +163,10 @@ class SQLParser:
 
         # Aquí identificamos todas las tuplas separadas por comas
         raw = [t for t in w[lp + 1: rp] if t != ","]
-
-        # Dividimos en tuplas
-        tuples = []
-        current_tuple = []
-        for tok in raw:
-            if tok == ",":
-                if current_tuple:
-                    tuples.append(current_tuple)
-                current_tuple = []
-            else:
-                current_tuple.append(tok)
-        if current_tuple:
-            tuples.append(current_tuple)
-
         # Parsear cada tupla en valores
         values = []
-        for tuple_ in tuples:
-            values.append([_lit(t) for t in tuple_])
-
+        for t in raw:
+            values.append(_lit(t))
         return {"operation": "insert", "table": table, "values": values}
 
     def _parse_select(self, w: List[str]) -> Dict[str, Any]:

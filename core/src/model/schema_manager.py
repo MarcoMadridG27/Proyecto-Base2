@@ -266,13 +266,23 @@ class SchemaManager:
 
         t = self.tables[table]
         fm: FileManager = t["file"]
+        # Verificar si 'row' es un diccionario
+        if not(isinstance(row, dict)):
+            # Si no es un diccionario, lo convertimos a uno
+            columns = t["schema"].columns  # Listado de columnas de la tabla
+            values = row  # Lista de valores para insertar
 
+            # Convertir la lista de valores en un diccionario usando las columnas
+            record_dict = {col["name"]: val for col, val in zip(columns, values)}
+        # Si ya es un diccionario, usamos tal cual
+        record_dict = row
+        print(record_dict)
         # 1) Guardar el registro en memoria secundaria y obtener offset
-        off_set = fm.append_record(row)
+        off_set = fm.append_record(record_dict)
 
         # 2) Insertar el registro en todos los índices
         for col, idx in t["indexes"].items():
-            col_value = row.get(col)
+            col_value = record_dict.get(col)
             if col_value is not None:
                 idx.insert(col_value, off_set)
 

@@ -64,17 +64,11 @@ def detect_column_type(values: list[str]) -> str:
         "%m-%d-%Y", "%d/%m/%Y",  # Otros formatos posibles.
     ]
 
-    # Depuración: Mostrar los valores para ver qué estamos analizando
-    print("Detectando tipo para valores:", values)
-
     for value in values:
         # Eliminar espacios antes y después, y verificar si la cadena no está vacía
         value = value.strip()
         if value == "":
             continue
-
-        # Depuración: Mostrar cada valor que estamos procesando
-        print(f"Procesando valor: {value}")
 
         # Verificar si es un entero
         if is_int:
@@ -111,9 +105,6 @@ def detect_column_type(values: list[str]) -> str:
         # Si ya determinamos que no es ninguno de los tipos, podemos salir del loop
         if not is_int and not is_float and not is_date:
             break
-
-    # Depuración: Mostrar el resultado de la detección
-    print(f"Es fecha: {is_date}, Es flotante: {is_float}, Es entero: {is_int}")
 
     # Retornar el tipo de dato según los valores detectados
     if is_date:
@@ -246,7 +237,9 @@ def create_index(request: IndexRequest):
     """
     try:
         # Aquí decides cómo se traduce la petición a una consulta en tu motor
-        query = f"CREATE INDEX {request.index_type.upper()} ON {request.table_name}"
+        # --> "ESTO FALTARIA MODIFICAR EN EL FRONT YA QUE SE DEBERIA SEGUIR ESTE FORMATO: CREATE INDEX <idx_name> ON <table> (<column>) [USING <index_type>] (SIN EL USING SE PONE COMO SEQUENTIAL POR DEFAULT)"
+        # faltaria pasar que columna se quiere crear el indice
+        query = f"CREATE INDEX {request.table_name}_{request.index_type.upper()} ON {request.table_name}"
         result = executor.execute(query)
         return {"ok": True, "message": f"{request.index_type} index created on {request.table_name}", "result": result}
     except Exception as e:

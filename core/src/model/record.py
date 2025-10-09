@@ -63,7 +63,6 @@ class RecordSchema:
         """
         if isinstance(values, dict):
             values = [values.get(c["name"], None) for c in self.columns]
-
         fields = []
         for col, val in zip(self.columns, values):
             ctype = col["type"].upper().strip()
@@ -92,7 +91,6 @@ class RecordSchema:
                     fields.append(b" " * n)
                 elif ctype == "DATE":
                     fields.append(b"0000-00-00")
-
         return struct.pack(self.format, *fields)
 
     def unpack(self, binary: bytes) -> Dict[str, Any]:

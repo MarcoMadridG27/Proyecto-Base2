@@ -202,12 +202,12 @@ class SequentialFile:
             cur = node.next_ptr
         return res
 
-    def search(self, key) -> Optional[int]:
+    def search(self, key) -> List[int]:
         """ Busca un registro por clave en la lista lógica. """
         main_count, _, head_ptr = self._get_header()
         if head_ptr == 0:
-            return None
-
+            return []
+        ans = []
         lb = self._lower_bound_d(key)
         cur = head_ptr
         while cur != 0:
@@ -216,12 +216,12 @@ class SequentialFile:
             if node.is_deleted():
                 cur = node.next_ptr
                 continue
-            if node.value == key:
-                return node.offset
-            if node.value > key:
-                return None
+            elif node.value == key:
+                ans.append(node.offset)
+            elif node.value > key:
+                break
             cur = node.next_ptr
-        return None
+        return ans
 
     def insert(self, col_value, off_set):
         """
