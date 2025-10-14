@@ -132,7 +132,7 @@ class SQLParser:
             raise ValueError("CREATE INDEX requiere columna entre paréntesis")
         column = w[lp + 1]
 
-        # Tipo de índice (opcional, default 'btree')
+        # Tipo de índice (opcional, default 'sequential')
         index_type = "sequential"  # por defecto
         ui = _find(w, "using")
         if ui != -1 and ui + 1 < len(w):

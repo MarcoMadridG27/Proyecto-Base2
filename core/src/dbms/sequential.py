@@ -9,40 +9,43 @@ from typing import Optional, Tuple, List
 DELETED_PTR = -1
 
 def dptr(i: int) -> int:
-    """ Convierte un índice a puntero de la región principal (D). """
+    """Convierte un índice a puntero de la región principal (D)."""
     if i < 1:
         raise ValueError("d(i) requiere i >= 1")
     return i
 
 def aptr(i: int) -> int:
-    """ Convierte un índice a puntero de la región auxiliar (A). """
+    """Convierte un índice a puntero de la región auxiliar (A)."""
     if i < 1:
         raise ValueError("a(i) requiere i >= 1")
     return -(i + 1)  # evita colisión con -1
 
 def is_end(p: int) -> bool:
-    """ Verifica si el puntero es el final de la lista (0). """
+    """¿Es el puntero fin de lista lógica?"""
     return p == 0
 
 def ptr_to_loc(p: int) -> Tuple[bool, int]:
-    """ Convierte puntero a (is_aux, idx) para registros válidos. """
+    """
+    Convierte puntero a (is_aux, idx) para registros válidos.
+    p>0 => d(idx)     ; p<0 y != -1  => a(idx)
+    """
     if p == 0 or p == DELETED_PTR:
         raise ValueError("Puntero fin/eliminado no tiene ubicación de registro")
     return (False, p) if p > 0 else (True, -p - 1)
 
-def label(p: int) -> str:
-    """ Retorna una etiqueta legible del puntero. """
-    if p == 0: return "END"
-    if p == DELETED_PTR: return "DEL"
-    return f"d({p})" if p > 0 else f"a({-p-1})"
-
 # ============================================================
-# Layout de registro (payload + next_ptr)
+# Registro: payload + next_ptr
+# Formato (definido por la clase, seteado por SequentialFile)
 # ============================================================
-EMP_FORMAT = ''  # Formato para (offset(en memoria secundaria), value(key), next_ptr)
-FORMAT_VALUE = ''
 class EntrySF:
-    """ Registro con un valor y puntero al siguiente en la lista lógica. """
+    """
+    Registro con (offset real del registro en la tabla), value(key), next_ptr.
+    El formato binario lo provee SequentialFile configurando estas variables de clase:
+      - EntrySF.emp_format: str de struct (p.ej. "<ii i", "<i100s i", "<if i")
+      - EntrySF.value_kind: "i" | "f" | "<Ns" (termina en 's' para texto)
+    """
+    emp_format: str = ""   # se setea desde SequentialFile
+    value_kind: str = ""   # se setea desde SequentialFile
 
     def __init__(self, offset: int, value, next_ptr: int = 0):
         self.offset = offset
@@ -50,37 +53,43 @@ class EntrySF:
         self.next_ptr = next_ptr
 
     def pack(self) -> bytes:
-        """ Empaqueta el registro en formato binario de acuerdo al tipo de valor. """
+        """Empaqueta el registro según el formato actual."""
+        kind = EntrySF.value_kind
+        if not EntrySF.emp_format:
+            raise RuntimeError("EntrySF.emp_format no inicializado")
 
-        if FORMAT_VALUE=="i":
-            # Para enteros, simplemente empaquetamos como un entero
-            return struct.pack(EMP_FORMAT, self.offset, self.value, self.next_ptr)
-        elif FORMAT_VALUE=="f":
-            # Para flotantes, usamos el tipo de datos `f` para empaquetar
-            return struct.pack(EMP_FORMAT, self.offset, self.value, self.next_ptr)
-        elif FORMAT_VALUE[len(FORMAT_VALUE)-1]=="s":
-            return struct.pack(EMP_FORMAT, self.offset, self.value.encode('utf-8'), self.next_ptr)
+        if kind == "i":
+            return struct.pack(EntrySF.emp_format, self.offset, int(self.value), self.next_ptr)
+        elif kind == "f":
+            return struct.pack(EntrySF.emp_format, self.offset, float(self.value), self.next_ptr)
+        elif kind.endswith("s"):
+            # strings de longitud fija
+            n = int(kind[:-1])
+            if isinstance(self.value, bytes):
+                vb = self.value[:n].ljust(n, b" ")
+            else:
+                vb = str(self.value).encode("utf-8")[:n].ljust(n, b" ")
+            return struct.pack(EntrySF.emp_format, self.offset, vb, self.next_ptr)
         else:
-            raise ValueError(f"Tipo de valor no soportado: {type(self.value)}")
+            raise ValueError(f"Tipo de valor no soportado para pack(): {kind}")
 
     @staticmethod
     def unpack(buf: bytes) -> "EntrySF":
-        """ Desempaqueta un registro desde bytes. """
+        """Desempaqueta un registro desde bytes."""
+        if not EntrySF.emp_format:
+            raise RuntimeError("EntrySF.emp_format no inicializado")
+        offset, value_raw, next_ptr = struct.unpack(EntrySF.emp_format, buf)
 
-        # Intentamos desempaquetar el registro de forma dinámica
-        offset, value, next_ptr = struct.unpack(EMP_FORMAT, buf)
-
-        # Si `value` es un entero o flotante, no necesitamos decodificar.
-        # Si es un string, lo decodificamos.
-        try:
-            value = value.decode("utf-8")  # Intentamos decodificar si es un string
-        except AttributeError:
-            pass  # Si no es un string, ignoramos el error y mantenemos el valor tal cual
-
+        kind = EntrySF.value_kind
+        if kind.endswith("s"):
+            # decodificar string fijo
+            value = value_raw.decode("utf-8", errors="ignore").rstrip(" ")
+        else:
+            value = value_raw
         return EntrySF(offset, value, next_ptr)
 
     def is_deleted(self) -> bool:
-        """ Verifica si el registro está marcado como eliminado (tombstone). """
+        """¿El registro está marcado como deleted (tombstone)?"""
         return self.next_ptr == DELETED_PTR
 
 # ============================================================
@@ -91,270 +100,367 @@ HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
 class SequentialFile:
     """
-    Archivo secuencial con:
-      - Región principal (D)
-      - Región auxiliar (A)
-      - Lista lógica ordenada enlazada por next_ptr
+    Archivo secuencial + zona auxiliar con lista lógica ordenada:
+      - Región principal (D) compacta y ordenada
+      - Región auxiliar (A) para inserciones
+      - Punteros next_ptr para mantener orden lógico
+      - Reorganización periódica volcando A→D
     """
-    def __init__(self, table: str, column_type: str):
 
-        """ Inicializa el archivo secuencial con el tipo de columna (formato). """
-        # Crear un formato para el registro con el tipo de columna adecuado.
-        global FORMAT_VALUE
-        FORMAT_VALUE = column_type
-        dir="/app/src/dbms/data_index"
-        self.column_type = column_type  # Esto es como '100s' o 'i'
-        os.makedirs(dir, exist_ok=True)
-        self.filename = os.path.join(dir, f"{table}_index_sequential.dat")
+    def __init__(self, table: str, column_type: str, idx_name: str | None = None):
+        base_dir = "/app/src/dbms/data_index"
+        os.makedirs(base_dir, exist_ok=True)
 
-        # Definir formato de registro según la columna (ejemplo: 'i' para INT o '100s' para VARCHAR)
-        global EMP_FORMAT
-        EMP_FORMAT = f"<i{column_type}i"  # offset, value, next_ptr
-        self.RECORD_SIZE = struct.calcsize(EMP_FORMAT)
+        # nombre del archivo: usa el nombre del índice si viene
+        if idx_name:
+            self.filename = os.path.join(base_dir, f"{table}_{idx_name}.dat")
+        else:
+            self.filename = os.path.join(base_dir, f"{table}_index_sequential.dat")
 
-        # Si el archivo no existe, crearlo
+        # guardar kind/tamaños 1 sola vez
+        self.value_kind = column_type
+        if column_type == "i":
+            self.value_size = 4
+        elif column_type == "f":
+            self.value_size = 4
+        elif column_type.endswith("s"):
+            self.value_size = int(column_type[:-1])
+        else:
+            raise ValueError(f"Tipo no soportado: {column_type}")
+
+        self.emp_format = f"<i{column_type}i"
+        self.record_size = struct.calcsize(self.emp_format)
+
+        EntrySF.emp_format = self.emp_format
+        EntrySF.value_kind = self.value_kind
+
         if not os.path.exists(self.filename):
             with open(self.filename, "wb") as f:
-                f.write(struct.pack(HEADER_FORMAT, 0, 0, 0))  # D=0, A=0, head=0
+                f.write(struct.pack(HEADER_FORMAT, 0, 0, 0))
 
-    # Header I/O
+    # ---------------- Header I/O ----------------
+
     def _get_header(self) -> Tuple[int, int, int]:
-        """ Obtiene la cabecera del archivo. """
         with open(self.filename, "rb") as f:
             f.seek(0)
             return struct.unpack(HEADER_FORMAT, f.read(HEADER_SIZE))
 
     def _set_header(self, main_count: int, aux_count: int, head_ptr: int):
-        """ Establece la cabecera del archivo. """
         with open(self.filename, "r+b") as f:
             f.seek(0)
             f.write(struct.pack(HEADER_FORMAT, main_count, aux_count, head_ptr))
 
-    # Offsets para las regiones
+    # ---------------- Offsets ----------------
+
     def _offs_d(self, i: int) -> int:
-        return HEADER_SIZE + (i - 1) * self.RECORD_SIZE
+        return HEADER_SIZE + (i - 1) * self.record_size
 
     def _offs_a(self, i: int, base_main: Optional[int] = None) -> int:
         if base_main is None:
             base_main, _, _ = self._get_header()
-        return HEADER_SIZE + base_main * self.RECORD_SIZE + (i - 1) * self.RECORD_SIZE
+        return HEADER_SIZE + base_main * self.record_size + (i - 1) * self.record_size
 
-    # Registro I/O
-    def _read_rec(self, is_aux: bool, idx: int, base_main: Optional[int] = None) -> EntrySF:
-        """ Lee un registro desde el archivo (en D o A). """
-        with open(self.filename, "rb") as f:
+    # ---------------- Registro I/O (con fd opcional para evitar reabrir) ----------------
+
+    def _read_rec(self, is_aux: bool, idx: int, base_main: Optional[int] = None, f=None) -> EntrySF:
+        """
+        Lee un registro D/A. Si `f` es un archivo abierto, se reutiliza (mejor rendimiento).
+        """
+        close = False
+        if f is None:
+            f = open(self.filename, "rb")
+            close = True
+        try:
             f.seek(self._offs_a(idx, base_main) if is_aux else self._offs_d(idx))
-            return EntrySF.unpack(f.read(self.RECORD_SIZE))
+            return EntrySF.unpack(f.read(self.record_size))
+        finally:
+            if close:
+                f.close()
 
-    def _write_rec(self, is_aux: bool, idx: int, rec: EntrySF, base_main: Optional[int] = None):
-        """ Escribe un registro en el archivo (en D o A). """
-        with open(self.filename, "r+b") as f:
+    def _write_rec(self, is_aux: bool, idx: int, rec: EntrySF, base_main: Optional[int] = None, f=None):
+        """
+        Escribe un registro D/A. Si `f` es un archivo abierto, se reutiliza (mejor rendimiento).
+        """
+        close = False
+        if f is None:
+            f = open(self.filename, "r+b")
+            close = True
+        try:
             f.seek(self._offs_a(idx, base_main) if is_aux else self._offs_d(idx))
             f.write(rec.pack())
+        finally:
+            if close:
+                f.close()
 
-    # Búsqueda binaria en la región D (principal)
+    # ---------------- Búsqueda binaria en D ----------------
+
     def _lower_bound_d(self, key) -> int:
-        """ Encuentra la primera posición en D donde el valor es mayor o igual a la clave. """
+        """
+        Primera posición en D con valor >= key. Si D vacío, retorna 1.
+        """
+        print(self.filename)
         main_count, _, _ = self._get_header()
+        if main_count == 0:
+            return 1
         l, r, ans = 1, main_count, main_count + 1
-        while l <= r:
-            m = (l + r) // 2
-            rec = self._read_rec(False, m, main_count)
-            if rec.value >= key:
-                ans = m
-                r = m - 1
-            else:
-                l = m + 1
+        with open(self.filename, "rb") as f:
+            while l <= r:
+                m = (l + r) // 2
+                rec = self._read_rec(False, m, main_count, f)
+                if rec.value >= key:
+                    ans = m
+                    r = m - 1
+                else:
+                    l = m + 1
         return ans
 
+    # ---------------- Consultas ----------------
+
     def search_range(self, lo, hi) -> List[int]:
+        """
+        Retorna offsets con value en [lo, hi].
+        Complejidad: O(log N + K). Usa lower_bound en D y luego camina la lista lógica
+        desde el predecesor en D (o head si no existe), para NO perder nodos en AUX.
+        """
         if lo > hi:
             lo, hi = hi, lo
+
         main_count, _, head_ptr = self._get_header()
         res: List[int] = []
-        if head_ptr == 0:
+        if head_ptr == 0 or main_count == 0:
             return res
 
-        # 1) binaria en D con 'lo' para ubicar predecesor
+        # 1) lower_bound en D
         lb = self._lower_bound_d(lo)
-        j = min(lb - 1, main_count)
-        while j >= 1:
-            cand = self._read_rec(False, j, main_count)
-            if not cand.is_deleted():
-                start_ptr = cand.next_ptr
-                break
-            j -= 1
-        else:
-            start_ptr = head_ptr
 
-        # 2) caminar hasta superar hi
-        cur = start_ptr
-        while not is_end(cur):
-            is_aux, idx = ptr_to_loc(cur)
-            node = self._read_rec(is_aux, idx, main_count)
-            if node.is_deleted():
+        # 2) predecesor en D: j = lb-1 (saltando d(j) borrados)
+        with open(self.filename, "rb") as f:
+            j = min(lb - 1, main_count)
+            while j >= 1:
+                cand = self._read_rec(False, j, main_count, f)
+                if not cand.is_deleted():
+                    # arrancamos DESPUÉS del predecesor en la lista lógica
+                    start_ptr = cand.next_ptr
+                    break
+                j -= 1
+            else:
+                # no hay predecesor válido en D; arrancamos desde head
+                start_ptr = head_ptr
+
+            # 3) Caminar la lista lógica hasta pasar hi
+            cur = start_ptr
+            while not is_end(cur):
+                is_aux, idx = ptr_to_loc(cur)
+                node = self._read_rec(is_aux, idx, main_count, f)
+
+                if node.is_deleted():
+                    cur = node.next_ptr
+                    continue
+
+                # si nos pasamos del rango, podemos cortar (lista lógica ordenada)
+                if node.value > hi:
+                    break
+
+                if node.value >= lo:
+                    res.append(node.offset)
+
                 cur = node.next_ptr
-                continue
-            if node.value > hi:
-                break
-            if node.value >= lo:
-                res.append(node.offset)
-            cur = node.next_ptr
+
         return res
 
     def search(self, key) -> List[int]:
-        """ Busca un registro por clave en la lista lógica. """
+        """
+        Retorna offsets de registros con value == key.
+        """
         main_count, _, head_ptr = self._get_header()
         if head_ptr == 0:
             return []
-        ans = []
-        lb = self._lower_bound_d(key)
-        cur = head_ptr
-        while cur != 0:
-            is_aux, idx = ptr_to_loc(cur)
-            node = self._read_rec(is_aux, idx, main_count)
-            if node.is_deleted():
+        ans: List[int] = []
+        with open(self.filename, "rb") as f:
+            # Comenzamos desde head; alternativa: saltar cerca con lower_bound
+            cur = head_ptr
+            while cur != 0:
+                is_aux, idx = ptr_to_loc(cur)
+                node = self._read_rec(is_aux, idx, main_count, f)
+                if node.is_deleted():
+                    cur = node.next_ptr
+                    continue
+                if node.value == key:
+                    ans.append(node.offset)
+                elif node.value > key:
+                    break
                 cur = node.next_ptr
-                continue
-            elif node.value == key:
-                ans.append(node.offset)
-            elif node.value > key:
-                break
-            cur = node.next_ptr
         return ans
+
+    # ---------------- Inserciones ----------------
 
     def insert(self, col_value, off_set):
         """
-        Inserta SIEMPRE en AUX y lo encadena en la posición ordenada:
-        - binaria en D para obtener el más cercano a la izquierda
-        - caminar por la cadena lógica mientras cur.codigo < emp.codigo
-        - enlazar prev -> new -> cur
+        Inserta SIEMPRE en AUX y lo encadena ordenadamente:
+          - Buscar posición (apoyado en D con lower_bound)
+          - Enlazar prev -> new -> cur
+          - Reorganizar periódicamente (A → D)
         """
         main_count, aux_count, head_ptr = self._get_header()
-        emp= EntrySF(off_set,col_value)
-        # 0) guardar en AUX (1-based)
+
+        # 0) Guardar en AUX (1-based)
         new_idx = aux_count + 1
-        emp.next_ptr = 0
-        self._write_rec(True, new_idx, emp, main_count)
-        new_ptr = aptr(new_idx)
-        aux_count += 1
+        emp = EntrySF(off_set, col_value, next_ptr=0)
 
-        # lista vacía
-        if head_ptr == 0:
-            head_ptr = new_ptr
-            self._set_header(main_count, aux_count, head_ptr)
-            self._maybe_reorganize()
-            return
+        with open(self.filename, "r+b") as f:
+            # Escribir en AUX
+            self._write_rec(True, new_idx, emp, main_count, f)
+            new_ptr = aptr(new_idx)
+            aux_count += 1
 
-        # 1) binaria en D por emp.codigo
-        lb = self._lower_bound_d(emp.value)
-        j = min(lb - 1, main_count)
-        # retroceder si d(j) está borrado
-        while j >= 1:
-            cand = self._read_rec(False, j, main_count)
-            if not cand.is_deleted():
-                break
-            j -= 1
-
-        # 2) decidir prev_ptr y cur_ptr
-        if j >= 1:
-            prev_ptr = dptr(j)
-            cur_ptr = self._read_rec(False, j, main_count).next_ptr
-        else:
-            # podría ir al inicio si <= head
-            h_is_aux, h_idx = ptr_to_loc(head_ptr)
-            head = self._read_rec(h_is_aux, h_idx, main_count)
-            if emp.value <= head.value:
-                emp.next_ptr = head_ptr
-                self._write_rec(True, new_idx, emp, main_count)
+            # Si lista vacía: new como head y listo
+            if head_ptr == 0:
                 head_ptr = new_ptr
+                # actualizar header y evaluar reorganización
                 self._set_header(main_count, aux_count, head_ptr)
                 self._maybe_reorganize()
                 return
-            prev_ptr = 0
-            cur_ptr = head_ptr
 
-        # 3) avanzar por punteros mientras cur.codigo < emp.codigo
-        while not is_end(cur_ptr):
-            is_aux, idx = ptr_to_loc(cur_ptr)
-            node = self._read_rec(is_aux, idx, main_count)
-            if node.is_deleted():  # defensivo
-                cur_ptr = node.next_ptr
-                continue
-            if node.value < emp.value:
-                prev_ptr = cur_ptr
-                cur_ptr = node.next_ptr
+            # 1) Usar lower_bound en D para ubicar vecino izquierdo en D
+            lb = self._lower_bound_d(emp.value)
+            j = min(lb - 1, main_count)
+
+            # Saltar registros d(j) borrados hacia atrás
+            while j >= 1:
+                cand = self._read_rec(False, j, main_count, f)
+                if not cand.is_deleted():
+                    break
+                j -= 1
+
+            # 2) Decidir prev_ptr y cur_ptr (caso general cubre insert al inicio)
+            if j >= 1:
+                prev_ptr = dptr(j)
+                cur_ptr = self._read_rec(False, j, main_count, f).next_ptr
             else:
-                break
+                prev_ptr = 0
+                cur_ptr = head_ptr
 
-        # 4) enlazar prev -> new -> cur
-        emp.next_ptr = cur_ptr
-        self._write_rec(True, new_idx, emp, main_count)
+            # 3) Avanzar mientras cur.value < nuevo.value
+            while not is_end(cur_ptr):
+                is_aux, idx = ptr_to_loc(cur_ptr)
+                node = self._read_rec(is_aux, idx, main_count, f)
+                if node.is_deleted():
+                    cur_ptr = node.next_ptr
+                    continue
+                if node.value < emp.value:
+                    prev_ptr = cur_ptr
+                    cur_ptr = node.next_ptr
+                else:
+                    break
 
-        if prev_ptr == 0:
-            head_ptr = new_ptr
-        else:
-            p_is_aux, p_idx = ptr_to_loc(prev_ptr)
-            prev_node = self._read_rec(p_is_aux, p_idx, main_count)
-            prev_node.next_ptr = new_ptr
-            self._write_rec(p_is_aux, p_idx, prev_node, main_count)
+            # 4) Enlazar prev -> new -> cur
+            emp.next_ptr = cur_ptr
+            self._write_rec(True, new_idx, emp, main_count, f)
 
+            if prev_ptr == 0:
+                head_ptr = new_ptr
+            else:
+                p_is_aux, p_idx = ptr_to_loc(prev_ptr)
+                prev_node = self._read_rec(p_is_aux, p_idx, main_count, f)
+                prev_node.next_ptr = new_ptr
+                self._write_rec(p_is_aux, p_idx, prev_node, main_count, f)
+
+        # Actualizar header (fuera del with para flush)
         self._set_header(main_count, aux_count, head_ptr)
         self._maybe_reorganize()
 
+    # ---------------- Borrado ----------------
+
     def delete(self, key) -> int:
-        """ Elimina un registro lógico marcándolo como tombstone. """
+        """
+        Marca como tombstone el primer registro con value == key.
+        Retorna el offset real de ese registro o 0 si no se encontró.
+        """
         main_count, aux_count, head_ptr = self._get_header()
         if head_ptr == 0:
-            return False
+            return 0
 
-        lb = self._lower_bound_d(key)
-        cur_ptr = head_ptr
-        while cur_ptr != 0:
-            is_aux, idx = ptr_to_loc(cur_ptr)
-            node = self._read_rec(is_aux, idx, main_count)
-
-            if node.value == key:
-                node.next_ptr = DELETED_PTR
-                self._write_rec(is_aux, idx, node, main_count)
-                return node.offset
-
-            cur_ptr = node.next_ptr
+        with open(self.filename, "r+b") as f:
+            cur_ptr = head_ptr
+            while cur_ptr != 0:
+                is_aux, idx = ptr_to_loc(cur_ptr)
+                node = self._read_rec(is_aux, idx, main_count, f)
+                if node.value == key and not node.is_deleted():
+                    node.next_ptr = DELETED_PTR
+                    self._write_rec(is_aux, idx, node, main_count, f)
+                    return node.offset
+                cur_ptr = node.next_ptr
         return 0
 
+    # ---------------- Política de reorganización ----------------
+
     def _maybe_reorganize(self):
+        """
+        Política menos agresiva para grandes volúmenes:
+          disparar cuando AUX supere max(64, 4*log2(main+1))
+        Ajusta esos parámetros a tu gusto según tu dataset.
+        """
         main_count, aux_count, _ = self._get_header()
-        # Política simple: cuando AUX supera floor(log2(main_count+1))
-        k = int(math.log2(max(1, main_count + 1)))
-        if aux_count > k:
+        k = int(math.log2(max(1, main_count + 1))) * 4
+        threshold = max(64, k)
+        if aux_count > threshold:
             self.reorganize()
 
+    # ---------------- Reorganización ----------------
     def reorganize(self):
-        """Reconstruye D leyendo desde head y siguiendo punteros en orden lógico."""
+        """
+        Vuelca la lista lógica a D compacto en un archivo temporal en una pasada,
+        reutilizando _read_rec/_write_rec con file handles abiertos.
+        """
         main_count, aux_count, head_ptr = self._get_header()
         if head_ptr == 0:
             self._set_header(0, 0, 0)
             return
 
-        base_main = main_count  # fija la base para leer A correctamente
-        ordered: List[EntrySF] = []
-        cur = head_ptr
-        seen = 0
-        cap = base_main + aux_count + 10
-        while not is_end(cur) and seen < cap:
-            is_aux, idx = ptr_to_loc(cur)
-            node = self._read_rec(is_aux, idx, base_main)
-            if not node.is_deleted():
-                ordered.append(node)
-            cur = node.next_ptr
-            seen += 1
+        tmp_path = self.filename + ".tmp"
 
-        # escribir compactado en D como d(1..N) y encadenar d(i)->d(i+1)
-        new_main = len(ordered)
-        with open(self.filename, "r+b") as f:
-            for i, rec in enumerate(ordered, start=1):
-                rec.next_ptr = dptr(i + 1) if i < new_main else 0
-                f.seek(self._offs_d(i))
-                f.write(rec.pack())
+        # Abrimos el original solo para leer, y el temporal para escribir
+        with open(self.filename, "rb") as fr, open(tmp_path, "wb+") as fw:
+            # Header provisional en el temporal
+            fw.write(struct.pack(HEADER_FORMAT, 0, 0, 0))
 
-        self._set_header(new_main, 0, dptr(1) if new_main >= 1 else 0)
+            base_main = main_count        # base para leer A correctamente del original
+            cur = head_ptr
+            i = 0
+            cap = main_count + aux_count + 16  # margen defensivo
+
+            prev_entry = None   # EntrySF del d(i-1) recién escrito (en el temporal)
+            prev_idx   = None   # índice i-1 en D temporal
+
+            while not is_end(cur) and i < cap:
+                is_aux, idx = ptr_to_loc(cur)
+                node = self._read_rec(is_aux, idx, base_main, fr)  # lee del original
+
+                if not node.is_deleted():
+                    i += 1
+                    # Creamos el EntrySF que irá a d(i) en el temporal (next_ptr provisional=0)
+                    cur_entry = EntrySF(node.offset, node.value, next_ptr=0)
+
+                    # Si ya escribimos d(i-1), enlazarlo -> d(i) y reescribirlo en el temporal
+                    if prev_entry is not None and prev_idx is not None:
+                        prev_entry.next_ptr = dptr(i)
+                        self._write_rec(False, prev_idx, prev_entry, None, fw)
+
+                    # Escribir d(i) en el temporal usando _write_rec
+                    self._write_rec(False, i, cur_entry, None, fw)
+
+                    # Actualizar "prev" para el próximo lazo
+                    prev_entry = cur_entry
+                    prev_idx   = i
+
+                cur = node.next_ptr
+
+            new_main = i
+            new_head = dptr(1) if new_main >= 1 else 0
+
+            # Header final en el temporal
+            fw.seek(0)
+            fw.write(struct.pack(HEADER_FORMAT, new_main, 0, new_head))
+
+        # Reemplazo atómico
+        os.replace(tmp_path, self.filename)

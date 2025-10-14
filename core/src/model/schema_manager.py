@@ -50,15 +50,19 @@ class SchemaManager:
         catalog: Dict[str, Any] = {}
         for t, info in self.tables.items():
             idx_types = dict(info.get("_index_types", {}))
+            idx_names = dict(info.get("_index_names", {}))
 
-            # Verifica que todos los índices tengan tipo en idx_types.
+            # coherencia: toda columna indexada debe tener tipo y nombre
             for col in info.get("indexes", {}):
                 if col not in idx_types:
                     raise RuntimeError(f"Falta index_type para {t}.{col}")
+                if col not in idx_names:
+                    raise RuntimeError(f"Falta index_name para {t}.{col}")
 
             catalog[t] = {
                 "columns": info["schema"].columns,
                 "index_types": idx_types,
+                "index_names": idx_names,
             }
 
         with open(self.catalog_path, "w", encoding="utf-8") as f:
@@ -75,40 +79,37 @@ class SchemaManager:
             catalog = json.load(f)
 
         for t, meta in catalog.items():
-            # Asegurarse de que las columnas están definidas
-            if "columns" not in meta:
-                raise ValueError(f"Las columnas de la tabla {t} no están definidas en el catálogo.")
-
-            # Cargar el esquema de columnas y el archivo .dat correspondiente
             schema = RecordSchema(meta["columns"])
             filepath = os.path.join(self.data_dir, f"{t}.dat")
             fm = FileManager(filepath, schema)
 
-            # Cargar los índices desde los tipos especificados en el catálogo
             idx_types: Dict[str, str] = meta.get("index_types", {})
+            idx_names: Dict[str, str] = meta.get("index_names", {})  # << NUEVO
+
             indexes: Dict[str, Any] = {}
             for col, typ in idx_types.items():
                 ctor = INDEX_TYPES.get(typ)
                 if not ctor:
                     raise ValueError(f"Tipo de índice desconocido en catálogo: {typ}")
 
-                # Verificar que las columnas estén disponibles
-                column = next((c for c in schema.columns if c["name"] == col))
+                # tipo de columna -> formato struct
+                column = next((c for c in schema.columns if c["name"] == col), None)
                 if column is None:
                     raise ValueError(f"Columna {col} no encontrada en la tabla {t}.")
+                column_format = self.get_column_format(column["type"])
 
-                column_type = column["type"]
-                column_format = self.get_column_format(column_type)
-                indexes[col] = ctor(t, column_format)
+                # nombre de índice
+                idx_name = idx_names.get(col)  # puede ser None para catálogos viejos
+                # pasamos idx_name al constructor del índice
+                indexes[col] = ctor(t, column_format, idx_name)
 
-            # Registra la tabla en memoria
             self.tables[t] = {
                 "schema": schema,
                 "file": fm,
                 "indexes": indexes,
                 "_index_types": dict(idx_types),
+                "_index_names": dict(idx_names),  # << NUEVO
             }
-
     # ===================== Crear tabla =====================
 
     def create_table(
@@ -335,45 +336,63 @@ class SchemaManager:
         else:
             raise ValueError(f"Tipo de columna no soportado: {column_type}")
 
-    def create_index(self, table: str, column: str, index_type: str) -> str:
+    def _index_name_exists(self, idx_name: str) -> bool:
+        # Busca en tablas cargadas (memoria)
+        for t, info in self.tables.items():
+            names = info.get("_index_names", {})
+            if idx_name in names.values():
+                return True
+        # Además, busca en el catálogo en disco por seguridad
+        if os.path.exists(self.catalog_path):
+            with open(self.catalog_path, "r", encoding="utf-8") as f:
+                cat = json.load(f)
+            for t, meta in cat.items():
+                names = meta.get("index_names", {})
+                if idx_name in names.values():
+                    return True
+        return False
+
+
+    def create_index(self, table: str, column: str, index_type: str, idx_name: str) -> str:
         """
-        Crea un índice para una columna específica de una tabla ya creada.
-        Se utiliza el tipo de columna transformado en un formato adecuado.
+        Crea un índice con nombre `idx_name` para `table(column)`.
+        Si el nombre ya existe en el catálogo, no lo crea.
         """
-        # Verificar que la tabla exista
+        # tabla y columna válidas
         if table not in self.tables:
             raise ValueError(f"La tabla {table} no existe.")
-
-        # Verificar que la columna exista
         if column not in [c["name"] for c in self.tables[table]["schema"].columns]:
             raise ValueError(f"La columna {column} no existe en {table}.")
 
-        # Obtener el tipo de la columna (por ejemplo, 'VARCHAR[100]', 'INT', etc.)
-        column_type = next(c["type"] for c in self.tables[table]["schema"].columns if c["name"] == column)
-
-        # Convertir el tipo de columna a formato (como '10s', 'i', 'f', etc.)
-        column_format = self.get_column_format(column_type)
-
-        # Verificar que el tipo de índice es válido
+        # tipo válido
         if index_type not in INDEX_TYPES:
             raise ValueError(f"Tipo de índice no soportado: {index_type}")
 
-        # Instanciar el índice usando el formato adecuado de la columna
+        # nombre de índice único
+        if self._index_name_exists(idx_name):
+            raise ValueError(f"El nombre de índice '{idx_name}' ya existe en el catálogo.")
+
+        # preparar formato de la columna
+        column_type = next(c["type"] for c in self.tables[table]["schema"].columns if c["name"] == column)
+        column_format = self.get_column_format(column_type)
+
+        # instanciar índice pasando idx_name
         ctor = INDEX_TYPES[index_type]
-        idx = ctor(table, column_format)  # Pasamos el formato en lugar de la columna directamente
+        idx = ctor(table, column_format, idx_name)
 
-        # Registrar el índice en la tabla
-        self.tables[table]["indexes"][column] = idx
-        self.tables[table]["_index_types"][column] = index_type
+        # registrar en memoria
+        info = self.tables[table]
+        info["indexes"][column] = idx
+        info.setdefault("_index_types", {})[column] = index_type
+        info.setdefault("_index_names", {})[column] = idx_name
 
-        # Poblar el índice
+        # poblar índice con los datos existentes
         for off, row in self._iter_with_offsets(table):
             key = row.get(column)
             if key is not None:
                 idx.insert(self._normalize(key), off)
 
-        # Guardar el catálogo con el nuevo índice
+        # persistir catálogo (incluye index_names)
         self._save_catalog()
 
-        return f"Índice {index_type} creado en {table}({column}) con formato {column_format}"
-
+        return f"Índice '{idx_name}' ({index_type}) creado en {table}({column}) con formato {column_format}"

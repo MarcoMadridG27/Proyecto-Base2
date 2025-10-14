@@ -4,11 +4,14 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="termiando-sequential">
+    <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="ajustes">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/api/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/api/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/dbms/bplustree.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/bplustree.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/dbms/extendible_hash.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/extendible_hash.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/dbms/isam.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/isam.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/dbms/rtree.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/rtree.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/dbms/sequential.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/sequential.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/model/record.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/model/record.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/executor.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/executor.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/model/schema_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/model/schema_manager.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/parser/parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/parser/parser.py" afterDir="false" />
     </list>
@@ -218,7 +221,15 @@
       <option name="project" value="LOCAL" />
       <updated>1759903878970</updated>
     </task>
-    <option name="localTasksCounter" value="9" />
+    <task id="LOCAL-00009" summary="ajustes">
+      <option name="closed" value="true" />
+      <created>1759973401245</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1759973401245</updated>
+    </task>
+    <option name="localTasksCounter" value="10" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -229,6 +240,7 @@
     <MESSAGE value="mejorado y ordenado" />
     <MESSAGE value="mejorado" />
     <MESSAGE value="termiando-sequential" />
-    <option name="LAST_COMMIT_MESSAGE" value="termiando-sequential" />
+    <MESSAGE value="ajustes" />
+    <option name="LAST_COMMIT_MESSAGE" value="ajustes" />
   </component>
 </project>

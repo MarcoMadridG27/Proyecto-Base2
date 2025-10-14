@@ -136,4 +136,4 @@ class Executor:
         index_type = ast["index_type"]
 
         # Crear el índice en el SchemaManager
-        return self.schema_manager.create_index(table, column, index_type)
+        return self.schema_manager.create_index(table, column, index_type,idx_name)
