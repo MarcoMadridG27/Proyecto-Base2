@@ -5,28 +5,12 @@ from typing import List, Tuple, Optional
 class ExtendibleHash:
     """
     Índice de Hash Extensible con directorio en disco.
-
-    Archivos:
-      - <name>.dir : header(D, dir_count) + dir_count celdas (cell_idx, bucket_ptr)
-      - <name>.bkt : buckets encadenables (d, count, next_ptr, suffix, entries...)
-
-    Lógica:
-      - D: profundidad global (tamaño del directorio = 2^D celdas)
-      - Cada bucket tiene d (profundidad local) y suffix (últimos d bits que atiende)
-      - Para ubicar bucket: idx = hash(key) % 2^D, se toma la celda idx del directorio,
-        se sigue su puntero y se verifica que los últimos d bits de idx == suffix.
-      - Split: si bucket lleno y d < D ⇒ crear dos hijos con d' = d+1 y sufijos:
-          s0 = suffix
-          s1 = (1 << d) | suffix
-        Redistribuir SÓLO las celdas del directorio que apuntaban al bucket base
-        según el bit nuevo ( (cell_idx >> d) & 1 ). Reinserción de entradas.
-      - Overflow: si d == D ⇒ crear bucket overflow y encadenar.
     """
 
     # ===== formatos =====
     IDX_HDR_FMT  = "<ii"   # D, dir_count
     IDX_HDR_SIZE = struct.calcsize(IDX_HDR_FMT)
-    DIR_CELL_FMT = "<ii"   # cell_idx, bucket_ptr
+    DIR_CELL_FMT = "<i"    # bucket_ptr
     DIR_CELL_SIZE = struct.calcsize(DIR_CELL_FMT)
 
     BKT_HDR_FMT  = "<iiii" # d, count, next_ptr, suffix
@@ -63,11 +47,13 @@ class ExtendibleHash:
             b1 = self._alloc_bucket(fb, local_depth=1, suffix=1)
             # poblar celdas: último bit (LSB) decide
             for idx in range(dir_count):
-                id = str(bin(idx))
-                if id[-1] == "0":
-                    fi.write(struct.pack(self.DIR_CELL_FMT, int(id), b0))
+                # Convertir el índice a binario
+                bin_idx = bin(idx)[2:].zfill(D)  # Asegurarse de que tenga D bits
+                # Usamos el último bit de la cadena binaria
+                if bin_idx[-1] == "0":
+                    fi.write(struct.pack(self.DIR_CELL_FMT, b0))
                 else:
-                    fi.write(struct.pack(self.DIR_CELL_FMT, int(id), b1))
+                    fi.write(struct.pack(self.DIR_CELL_FMT, b1))
 
     def _alloc_bucket(self, fb, local_depth: int, suffix: int) -> int:
         """
@@ -84,19 +70,19 @@ class ExtendibleHash:
         with open(self.index_path, "rb") as f:
             return struct.unpack(self.IDX_HDR_FMT, f.read(self.IDX_HDR_SIZE))
 
-    def _read_dir_cell(self, idx: int) -> Tuple[int, int]:
+    def _read_dir_cell(self, idx: int) -> int:
         """
         Lee la celda del directorio en posición idx.
-        Retorna (cell_idx, bucket_ptr).
+        Retorna bucket_ptr.
         """
         with open(self.index_path, "rb") as f:
             f.seek(self.IDX_HDR_SIZE + idx * self.DIR_CELL_SIZE)
-            return struct.unpack(self.DIR_CELL_FMT, f.read(self.DIR_CELL_SIZE))
+            return struct.unpack(self.DIR_CELL_FMT, f.read(self.DIR_CELL_SIZE))[0]
 
-    def _write_dir_cell(self, idx: int, cell_idx: int, bucket_ptr: int):
+    def _write_dir_cell(self, idx: int, bucket_ptr: int):
         with open(self.index_path, "r+b") as f:
             f.seek(self.IDX_HDR_SIZE + idx * self.DIR_CELL_SIZE)
-            f.write(struct.pack(self.DIR_CELL_FMT, cell_idx, bucket_ptr))
+            f.write(struct.pack(self.DIR_CELL_FMT, bucket_ptr))
 
     def _scan_dir_cells_pointing_to(self, bucket_off: int) -> List[int]:
         """
@@ -108,7 +94,7 @@ class ExtendibleHash:
         with open(self.index_path, "rb") as f:
             f.seek(self.IDX_HDR_SIZE)
             for i in range(dir_count):
-                cell_idx, ptr = struct.unpack(self.DIR_CELL_FMT, f.read(self.DIR_CELL_SIZE))
+                ptr = struct.unpack(self.DIR_CELL_FMT, f.read(self.DIR_CELL_SIZE))
                 if ptr == bucket_off:
                     idxs.append(i)
         return idxs
@@ -137,7 +123,6 @@ class ExtendibleHash:
         with open(self.data_path, "r+b") as f:
             f.seek(off)
             f.write(struct.pack(self.BKT_HDR_FMT, d, cnt, nxt, suffix))
-            # escribir exactamente bucket_capacity slots
             for i in range(self.bucket_capacity):
                 if i < len(entries):
                     k, ro = entries[i]
@@ -173,13 +158,6 @@ class ExtendibleHash:
         else:
             return (int(abs(float(key)) * 1_000_003) & 0x7fffffff) % dir_count
 
-    @staticmethod
-    def _last_bits(x: int, d: int) -> int:
-        """Devuelve los últimos d bits de x: x & ((1<<d)-1)."""
-        if d <= 0:
-            return 0
-        return x & ((1 << d) - 1)
-
     # =================== búsqueda ===================
 
     def search(self, key) -> List[int]:
@@ -190,16 +168,11 @@ class ExtendibleHash:
           bucket base -> seguir encadenamiento comparando suffix con idx.
         """
         D, dir_count = self._read_index_header()
-        idx = int(self._hash_mod(key, dir_count)) #DEBERIA RETORNAR UN BIN DE D bits
-
-        # leer la celda idx
-        cell_idx, bkt_off = self._read_dir_cell(idx)
-
+        idx = self._hash_mod(key, dir_count)
+        bkt_off = self._read_dir_cell(idx)
         res = []
-        # recorrer bucket base y su cadena
         while bkt_off != 0:
             d, cnt, nxt, suffix, entries = self._read_bucket(bkt_off)
-
             for i in range(cnt):
                 k, ro = entries[i]
                 if k == key:
@@ -219,9 +192,9 @@ class ExtendibleHash:
           - Si lleno y d==D: overflow (encadenar).
         """
         D, dir_count = self._read_index_header()
-        idx = int(self._hash_mod(key, dir_count))
+        idx = self._hash_mod(key, dir_count)
 
-        cell_idx, bkt_off = self._read_dir_cell(idx)
+        bkt_off = self._read_dir_cell(idx)
         d, cnt, nxt, suffix, entries = self._read_bucket(bkt_off)
 
         # caso 1: hay espacio en el bucket base
@@ -279,5 +252,33 @@ class ExtendibleHash:
             off = nxt
         return all_entries
 
+    def _split_bucket(self, base_off: int, d: int, suffix: int):
+        """
+        Divide el *bucket* base en dos (hijos) y los distribuye entre dos nuevos buckets:
+        - El hijo izquierdo tendrá el sufijo 0 + sufijo original.
+        - El hijo derecho tendrá el sufijo 1 + sufijo original.
 
+        Redistribuye las celdas del directorio que apuntaban al *bucket* base según el sufijo.
+        Si un *bucket* se llena, se encadenará con otro nuevo *bucket*.
+        """
+        # Paso 1: Incrementar la profundidad de ambos nuevos buckets (d' = d + 1).
+        new_depth = d + 1
 
+        # Paso 2: Agregar un bit al principio del sufijo para los dos nuevos buckets:
+        s0 = "0" + bin(suffix)[2:].zfill(d)  # 0 + sufijo
+        s1 = "1" + bin(suffix)[2:].zfill(d)  # 1 + sufijo
+
+        # Paso 3: Crear los nuevos buckets (ambos con la misma profundidad y sufijos diferentes).
+        with open(self.data_path, "r+b") as fb:
+            new_off_1 = self._alloc_bucket(fb, local_depth=new_depth, suffix=int(s1, 2))  # Crea el primer nuevo bucket.
+            self._write_bucket(base_off, new_depth, 0, 0, int(s0, 2), [])  # Escribe el primer bucket con sufijo 0.
+
+        # Paso 4: Obtener las celdas del directorio que apuntan al bucket base.
+        idxs = self._scan_dir_cells_pointing_to(base_off)
+
+        # Paso 5: Redistribuir las celdas del directorio entre los nuevos buckets, basándonos en los sufijos.
+        for idx in idxs:
+            if bin(idx)[-new_depth:] == s0:  # Compara con el último bit del sufijo 0
+                self._write_dir_cell(idx, base_off)
+            else:
+                self._write_dir_cell(idx, new_off_1)
