@@ -17,4 +17,4 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - core
+      - backend

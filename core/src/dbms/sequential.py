@@ -371,26 +371,28 @@ class SequentialFile:
 
     # ---------------- Borrado ----------------
 
-    def delete(self, key) -> int:
+    def delete(self, key) -> List[int]:
         """
         Marca como tombstone el primer registro con value == key.
         Retorna el offset real de ese registro o 0 si no se encontró.
         """
         main_count, aux_count, head_ptr = self._get_header()
         if head_ptr == 0:
-            return -1
-
+            return [-1]
+        res: List[int] = []
         with open(self.filename, "r+b") as f:
             cur_ptr = head_ptr
-            while cur_ptr != 0:
+            while not is_end(cur_ptr):
                 is_aux, idx = ptr_to_loc(cur_ptr)
                 node = self._read_rec(is_aux, idx, main_count, f)
+                if node.value > key:
+                    break
                 if node.value == key and not node.is_deleted():
                     node.next_ptr = DELETED_PTR
                     self._write_rec(is_aux, idx, node, main_count, f)
-                    return node.offset
+                    res.append(node.offset)
                 cur_ptr = node.next_ptr
-        return -1
+        return res
 
     # ---------------- Política de reorganización ----------------
 

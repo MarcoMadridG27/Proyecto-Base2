@@ -304,12 +304,16 @@ class SchemaManager:
         off_set=t["indexes"][where["column"]].delete(where["value"])
         record=fm.read_record(off_set)
 
+        if off_set[0]==-1: #no se econtro la key que se queria eliminar
+            return deleted
+
         # eliminar en todos los índices de la tabla
         for col, idx in t["indexes"].items():
             if where["column"] != col:
                 idx.delete(record[col])
-        fm.delete_record(off_set)
-        deleted+=1
+        for i in off_set:
+            fm.delete_record(i)
+            deleted+=1
 
         # Después de eliminar el registro, actualizar el catálogo
         self._save_catalog()
