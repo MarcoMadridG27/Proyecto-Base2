@@ -17,7 +17,7 @@ class ExtendibleHash:
     BKT_HDR_SIZE = struct.calcsize(BKT_HDR_FMT)
 
     def __init__(self, table: str, column_type: str, idx_name: Optional[str] = None,
-                 D: int = 3, bucket_capacity: int = 15):
+                 D: int = 10, bucket_capacity: int = 100):
         base_dir = "/app/src/dbms/data_index"
         os.makedirs(base_dir, exist_ok=True)
         name = f"{table}_{(idx_name or 'extendible')}"
@@ -218,9 +218,10 @@ class ExtendibleHash:
             return
 
         # caso 3: overflow si d == D
-        off=bkt_off
+        off = bkt_off
+        last_off = bkt_off
         while off != 0:
-            bkt_off = off
+            last_off = off
             d, cnt, nxt, suffix, entries = self._read_bucket(off)
             off = nxt
         # si hay espacio en el bucket encadenado
@@ -230,13 +231,13 @@ class ExtendibleHash:
             else:
                 entries.append((key, row_off))
             cnt += 1
-            self._write_bucket(bkt_off, d, cnt, nxt, suffix, entries)
+            self._write_bucket(last_off, d, cnt, nxt, suffix, entries)
             return
         else:
             with open(self.data_path, "r+b") as fb:
                 new_off = self._alloc_bucket(fb, local_depth=d, suffix=suffix)
         # encadenar y escribir nueva entrada en el overflow
-        self._write_bucket(bkt_off, d, cnt, new_off, suffix, entries)
+        self._write_bucket(last_off, d, cnt, new_off, suffix, entries)
         self._write_bucket(new_off, d, 1, 0, suffix, [(key, row_off)])
         return
 
@@ -261,6 +262,8 @@ class ExtendibleHash:
         Redistribuye las celdas del directorio que apuntaban al *bucket* base según el sufijo.
         Si un *bucket* se llena, se encadenará con otro nuevo *bucket*.
         """
+        D, dir_count = self._read_index_header()
+
         # Paso 1: Incrementar la profundidad de ambos nuevos buckets (d' = d + 1).
         new_depth = d + 1
 
@@ -278,7 +281,7 @@ class ExtendibleHash:
 
         # Paso 5: Redistribuir las celdas del directorio entre los nuevos buckets, basándonos en los sufijos.
         for idx in idxs:
-            if bin(idx)[-new_depth:] == s0:  # Compara con el último bit del sufijo 0
+            if bin(idx)[2:].zfill(D)[-new_depth:] == s0:  # Compara con el último bit del sufijo 0
                 self._write_dir_cell(idx, base_off)
             else:
                 self._write_dir_cell(idx, new_off_1)

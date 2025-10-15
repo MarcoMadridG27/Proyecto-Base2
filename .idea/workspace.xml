@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="hash" />
+    <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="mejoras">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/dbms/extendible_hash.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/extendible_hash.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -275,7 +278,15 @@
       <option name="project" value="LOCAL" />
       <updated>1760507070787</updated>
     </task>
-    <option name="localTasksCounter" value="17" />
+    <task id="LOCAL-00017" summary="mejoras">
+      <option name="closed" value="true" />
+      <created>1760507414827</created>
+      <option name="number" value="00017" />
+      <option name="presentableId" value="LOCAL-00017" />
+      <option name="project" value="LOCAL" />
+      <updated>1760507414827</updated>
+    </task>
+    <option name="localTasksCounter" value="18" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -289,6 +300,7 @@
     <MESSAGE value="ajustes" />
     <MESSAGE value="sequential-mejorado" />
     <MESSAGE value="hash" />
-    <option name="LAST_COMMIT_MESSAGE" value="hash" />
+    <MESSAGE value="mejoras" />
+    <option name="LAST_COMMIT_MESSAGE" value="mejoras" />
   </component>
 </project>
