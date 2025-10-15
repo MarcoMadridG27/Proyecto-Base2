@@ -378,7 +378,7 @@ class SequentialFile:
         """
         main_count, aux_count, head_ptr = self._get_header()
         if head_ptr == 0:
-            return 0
+            return -1
 
         with open(self.filename, "r+b") as f:
             cur_ptr = head_ptr
@@ -390,7 +390,7 @@ class SequentialFile:
                     self._write_rec(is_aux, idx, node, main_count, f)
                     return node.offset
                 cur_ptr = node.next_ptr
-        return 0
+        return -1
 
     # ---------------- Política de reorganización ----------------
 

@@ -5,8 +5,23 @@ from typing import List, Tuple, Optional
 class ExtendibleHash:
     """
     Índice de Hash Extensible con directorio en disco.
-    """
 
+    Archivos:
+      - <name>.dir : header(D, dir_count) + dir_count celdas (solo bucket_ptr por celda)
+      - <name>.bkt : buckets encadenables (d, count, next_ptr, suffix, entries...)
+
+    Convenciones:
+      - D: profundidad global (tamaño del directorio = 2^D celdas)
+      - Cada bucket guarda:
+          d       : profundidad local (bits de sufijo que atiende)
+          count   : # entradas efectivas escritas
+          next_ptr: encadenamiento (0 = fin)
+          suffix  : entero que representa los últimos d bits que atiende
+      - Para dirigir:
+          idx = hash(key) % (1 << D)
+          bucket_ptr = dir[idx]
+          Se compara/redistribuye por los últimos d (o d+1) bits de idx, no por el valor de la clave.
+    """
     # ===== formatos =====
     IDX_HDR_FMT  = "<ii"   # D, dir_count
     IDX_HDR_SIZE = struct.calcsize(IDX_HDR_FMT)
@@ -17,7 +32,7 @@ class ExtendibleHash:
     BKT_HDR_SIZE = struct.calcsize(BKT_HDR_FMT)
 
     def __init__(self, table: str, column_type: str, idx_name: Optional[str] = None,
-                 D: int = 10, bucket_capacity: int = 100):
+                 D: int = 9, bucket_capacity: int = 100):
         base_dir = "/app/src/dbms/data_index"
         os.makedirs(base_dir, exist_ok=True)
         name = f"{table}_{(idx_name or 'extendible')}"
@@ -100,6 +115,11 @@ class ExtendibleHash:
         return idxs
 
     # =================== buckets ===================
+    def _write_bucket_header(self, off: int, d: int, cnt: int, nxt: int, suffix: int):
+        """Actualiza SOLO el header del bucket en 'off' sin tocar sus entries."""
+        with open(self.data_path, "r+b") as f:
+            f.seek(off)
+            f.write(struct.pack(self.BKT_HDR_FMT, d, cnt, nxt, suffix))
 
     def _read_bucket(self, off: int):
         with open(self.data_path, "rb") as f:
@@ -139,24 +159,20 @@ class ExtendibleHash:
 
     def _hash_mod(self, key, dir_count: int) -> int:
         """
-        idx = hash(key) % dir_count, con hash estable:
-
-        - str: acumulativo base 257 (primo). Enmascaramos con 0x7fffffff para
-               mantener 31 bits positivos:
-                 h = (h * 257 + ch) & 0x7fffffff
-        - int: (int(key) & 0x7fffffff) % dir_count
-        - float: int(abs(key)*1_000_003) & 0x7fffffff  -> % dir_count
+        idx = hash(key) % dir_count
         """
-        if self.KEY_FMT.endswith("s"):
+        if self.KEY_FMT.endswith("s"):  # Si la clave es una cadena
             s = key if isinstance(key, str) else str(key)
             h = 0
             for ch in s.encode("utf-8"):
-                h = (h * 257 + ch) & 0x7fffffff  # multiplica y suma; fija 31 bits
-            return h % dir_count
-        elif self.KEY_FMT == "i":
-            return (int(key) & 0x7fffffff) % dir_count
-        else:
-            return (int(abs(float(key)) * 1_000_003) & 0x7fffffff) % dir_count
+                h = (h * 257 + ch) & 0x7fffffff  # Calculamos un hash acumulativo con base 257
+            return h % dir_count  # Aplicamos el módulo con 2^D (dir_count)
+
+        elif self.KEY_FMT == "i":  # Si la clave es un entero
+            return (int(key) & 0x7fffffff) % dir_count  # Aseguramos que el valor esté dentro del rango
+
+        else:  # Si la clave es un flotante
+            return (int(abs(float(key)) * 1_000_003) & 0x7fffffff) % dir_count  # Para flotantes
 
     # =================== búsqueda ===================
 
@@ -240,6 +256,71 @@ class ExtendibleHash:
         self._write_bucket(last_off, d, cnt, new_off, suffix, entries)
         self._write_bucket(new_off, d, 1, 0, suffix, [(key, row_off)])
         return
+    # =================== delete ===================
+
+    def delete(self, key) -> List[int]:
+        """
+        Elimina TODAS las ocurrencias de 'key' en el bucket base y su cadena.
+        - Compacta localmente (swap con el último válido) dentro de cada bucket.
+        - Decrementa 'count'.
+        - Si un bucket NO base queda vacío, se desencadena (prev.next_ptr salta ese bucket) *actualizando solo su header*.
+        - Si el bucket BASE queda vacío, redirige TODAS las celdas del directorio que lo apuntaban a su 'nxt'.
+        Retorna offsets eliminados o [-1] si no encontró nada.
+        """
+        _, dir_count = self._read_index_header()
+        idx = self._hash_mod(key, dir_count)
+
+        base_off = self._read_dir_cell(idx)
+        if base_off == 0:
+            return [-1]
+
+        removed: List[int] = []
+
+        prev_off = 0  # 0 => aún estamos en el base
+        prev_hdr = None  # (pd, pcnt, pnxt, psuffix) del bucket previo
+        cur_off = base_off
+
+        while cur_off != 0:
+            d, cnt, nxt, suffix, entries = self._read_bucket(cur_off)
+            changed = False
+
+            if cnt > 0:
+                i = 0
+                while i < cnt:
+                    if entries[i][0] == key:
+                        removed.append(entries[i][1])
+                        cnt -= 1
+                        if i < cnt:
+                            entries[i] = entries[cnt]  # swap local
+                        changed = True
+                    else:
+                        i += 1
+
+            if changed:
+                # Persistir bucket actual
+                self._write_bucket(cur_off, d, cnt, nxt, suffix, entries)
+
+                # Si el bucket quedó vacío
+                if cnt == 0:
+                    if prev_off != 0:
+                        # NO BASE: hacer prev.next_ptr = nxt (solo header)
+                        pd, pcnt, pnxt, psuffix = prev_hdr
+                        self._write_bucket_header(prev_off, pd, pcnt, nxt, psuffix)
+                        # avanzar saltando el bucket vacío (prev se mantiene)
+                        cur_off = nxt
+                        continue
+                    else:
+                        # BASE vacío: redirigir todas las celdas del directorio que lo apuntan
+                        for i_dir in self._scan_dir_cells_pointing_to(cur_off):
+                            self._write_dir_cell(i_dir, nxt)
+                        # actualizar
+                        cur_off = nxt
+                        continue
+            # avanzar manteniendo referencia SOLO al header del previo (no entries)
+            prev_off = cur_off
+            prev_hdr = (d, cnt, nxt, suffix)
+            cur_off = nxt
+        return removed if removed else [-1]
 
     # =================== split ===================
 
@@ -281,7 +362,7 @@ class ExtendibleHash:
 
         # Paso 5: Redistribuir las celdas del directorio entre los nuevos buckets, basándonos en los sufijos.
         for idx in idxs:
-            if bin(idx)[2:].zfill(D)[-new_depth:] == s0:  # Compara con el último bit del sufijo 0
+            if bin(idx)[2:].zfill(D)[-new_depth:] == s0:
                 self._write_dir_cell(idx, base_off)
             else:
                 self._write_dir_cell(idx, new_off_1)
