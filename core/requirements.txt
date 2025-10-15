@@ -5,7 +5,7 @@ pyparsing==3.1.2        # opcional, si usas parser basado en pyparsing
 numpy==1.26.4           # útil para cálculos, RTree simple o métricas
 rtree==1.3.0            # binding de libspatialindex, para RTree real
 pandas==2.2.2           # para cargar CSV en pruebas
-# === API Backend ===
+# === API core ===
 fastapi==0.115.0
 uvicorn[standard]==0.30.3
 # === Frontend ===

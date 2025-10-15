@@ -1023,7 +1023,7 @@ packages:
     cpu: [wasm32]
     bundledDependencies:
       - '@napi-rs/wasm-runtime'
-      - '@emnapi/Backend'
+      - '@emnapi/core'
       - '@emnapi/runtime'
       - '@tybys/wasm-util'
       - '@emnapi/wasi-threads'
@@ -2770,7 +2770,7 @@ snapshots:
       '@next/swc-win32-ia32-msvc': 14.2.16
       '@next/swc-win32-x64-msvc': 14.2.16
     transitivePeerDependencies:
-      - '@babel/Backend'
+      - '@babel/core'
       - babel-plugin-macros
 
   node-releases@2.0.21: {}

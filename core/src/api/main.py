@@ -13,7 +13,7 @@ from src.executor import Executor
 executor = Executor(data_dir="data")
 
 app = FastAPI(
-    title="Mini DB Backend",
+    title="Mini DB core",
     description="Proyecto BD2 - Motor de base de datos con índices",
     version="1.0"
 )
@@ -123,7 +123,7 @@ def detect_column_type(values: list[str]) -> str:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "message": "Backend running!"}
+    return {"status": "ok", "message": "core running!"}
 
 
 @app.post("/query")

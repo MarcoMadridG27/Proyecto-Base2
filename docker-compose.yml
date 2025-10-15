@@ -1,13 +1,13 @@
 services:
   backend:
-    build: ./Backend
-    container_name: dbms-Backend
+    build: core
+    container_name: dbms-core
     ports:
       - "8000:8000"
     volumes:
-      - ./Backend/src:/app/src          # código fuente (hot-reload)
-      - ./Backend/data:/app/data        # ← AGREGAR ESTO para persistencia
-      - ./Backend/src/dbms:/app/src/dbms
+      - ./core/src:/app/src          # código fuente (hot-reload)
+      - ./core/data:/app/data        # ← AGREGAR ESTO para persistencia
+      - ./core/src/dbms:/app/src/dbms
     environment:
       - PYTHONUNBUFFERED=1
 
@@ -17,4 +17,4 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - Backend
+      - core
