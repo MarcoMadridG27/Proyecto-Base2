@@ -263,7 +263,6 @@ class ExtendibleHash:
         """
         # Paso 1: Incrementar la profundidad de ambos nuevos buckets (d' = d + 1).
         new_depth = d + 1
-
         # Paso 2: Agregar un bit al principio del sufijo para los dos nuevos buckets:
         s0 = "0" + bin(suffix)[2:].zfill(d)  # 0 + sufijo
         s1 = "1" + bin(suffix)[2:].zfill(d)  # 1 + sufijo
