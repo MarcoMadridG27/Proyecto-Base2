@@ -18,6 +18,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+data/
 env/
 venv/
 .venv/

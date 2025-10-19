@@ -6,7 +6,7 @@ TOKEN_REGEX = [
     ("NUMBER", r"\d+(\.\d+)?"),
     ("STRING", r"'[^']*'|\"[^\"]*\""),
     ("IDENT", r"[a-zA-Z_][a-zA-Z0-9_]*"),
-    ("SYMBOL", r"[(),=*]"),
+    ("SYMBOL", r"[(),=*\[\]]"),
     ("OP", r"(=|<=|>=|<|>|between|in)"),
     ("WS", r"\s+"),
 ]

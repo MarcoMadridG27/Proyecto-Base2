@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 import os
 import shutil
 import csv
@@ -9,9 +10,14 @@ import time
 
 from src.parser.executor import Executor
 from src.schema_manager import SchemaManager
+import pathlib
 
-# Inicializamos Executor
-executor = Executor(data_dir="data")
+# Inicializamos Executor: compute data_dir relative to this file so it works
+# when the process cwd is the repository root.
+CURRENT_DIR = pathlib.Path(__file__).resolve().parent
+CORE_ROOT = CURRENT_DIR.parent.parent  # core/src -> core
+DATA_DIR = str(CORE_ROOT.joinpath("data"))
+executor = Executor(data_dir=DATA_DIR)
 
 app = FastAPI(
     title="Mini DB Backend",
@@ -34,11 +40,13 @@ app.add_middleware(
 class QueryRequest(BaseModel):
     query: str
     use_index: bool  # Se añade el parámetro use_index
+    index_hint: Optional[str] = None
 
 class IndexRequest(BaseModel):
     index_type: str
     table_name: str
-    column: str  # Asegurarse de que se reciba el nombre de la columna para crear el índice
+    column: Optional[str] = None  # prefer single-column name for non-spatial indexes
+    columns: Optional[list] = None  # for spatial indexes, allow explicit columns list
 
 # -------------------------------
 # ENDPOINTS
@@ -57,18 +65,24 @@ def run_query(request: QueryRequest):
         
         # Ejecutar la consulta con o sin índice
         start_time = time.time()
-        result = executor.execute(request.query, use_index=use_index)
+        result = executor.execute(request.query, use_index=use_index, index_hint=request.index_hint)
         execution_time = time.time() - start_time
 
         # Normalizar salida de SELECT vs otras operaciones
         if isinstance(result, dict) and "result" in result and "used_index" in result:
-            return {
+            resp = {
                 "ok": True,
                 "result": result["result"],
                 "used_index": result["used_index"],
                 "index_warning": result.get("index_warning"),
                 "execution_time": execution_time,
             }
+            # include used_index_type if present
+            if "used_index_type" in result:
+                resp["used_index_type"] = result["used_index_type"]
+            if "used_index_columns" in result:
+                resp["used_index_columns"] = result["used_index_columns"]
+            return resp
         else:
             return {
                 "ok": True,
@@ -171,14 +185,44 @@ def create_index(request: IndexRequest):
     Crea un índice en la tabla especificada usando el motor DBMS.
     """
     try:
-        # Asegúrate de que el cuerpo de la petición tenga un parámetro 'column' que indique la columna en la que se crea el índice
         idx_type = request.index_type.lower()
-        if idx_type not in ("sequential",):
-            return {"ok": False, "error": f"Index type '{request.index_type}' not implemented yet. Available: sequential"}
-        query = f"CREATE INDEX {idx_type} ON {request.table_name} ({request.column})"
+        if idx_type not in ("sequential", "isam", "btree", "hash", "rtree", "kdtree"):
+            return {"ok": False, "error": f"Index type '{request.index_type}' not implemented yet. Available: sequential, isam, btree, hash, rtree, kdtree"}
 
+        # If explicit columns array provided and spatial index requested, call SchemaManager helper
+        if request.columns and idx_type in ("rtree", "kdtree"):
+            cols = request.columns
+            # validate list
+            if not isinstance(cols, list) or len(cols) == 0:
+                return {"ok": False, "error": "columns must be a non-empty list when provided"}
+            # call SchemaManager helper to build multi-column spatial index
+            res = executor.schema_manager.create_index_multi(request.table_name, cols, idx_type)
+            return {"ok": True, "message": res}
+
+        # Fallback to legacy single-column create via executor (parses CREATE INDEX SQL)
+        if not request.column:
+            return {"ok": False, "error": "Missing 'column' for index creation"}
+        query = f"CREATE INDEX {idx_type} ON {request.table_name} ({request.column})"
         result = executor.execute(query)
         return {"ok": True, "message": f"{idx_type} index created on {request.table_name} column {request.column}", "result": result}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/compare_query")
+def compare_query(request: dict):
+    """Request body: { table: str, columns: ["col"], condition: str, methods?: ["sequential","isam",...] }
+    Returns per-technique timings and disk access counts.
+    """
+    try:
+        table = request.get("table")
+        cols = request.get("columns")
+        cond = request.get("condition")
+        methods = request.get("methods")
+        res = executor.schema_manager.compare_query_methods(table, cols, cond, methods=methods)
+        return {"ok": True, "result": res}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -236,5 +280,68 @@ def system_stats():
                 "tables": list(executor.schema_manager.tables.keys())
             }
         }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+# -------------------------------
+# Endpoint: List tables with indexes
+# -------------------------------
+@app.get("/tables_with_indexes")
+def tables_with_indexes():
+    try:
+        result = []
+        for table_name, table_info in executor.schema_manager.tables.items():
+            indexed = []
+            for col, idx_obj in table_info.get("indexes", {}).items():
+                # determine index type
+                itype = None
+                try:
+                    cname = idx_obj.__class__.__name__.lower()
+                    if "sequential" in cname or isinstance(idx_obj, type(None)):
+                        itype = "sequential"
+                    elif "isam" in cname:
+                        itype = "isam"
+                    elif "bplustree" in cname or "bplus" in cname or "btree" in cname:
+                        itype = "btree"
+                    elif "extend" in cname or "hash" in cname:
+                        itype = "hash"
+                    elif "rtree" in cname:
+                        itype = "rtree"
+                    else:
+                        itype = cname
+                except Exception:
+                    itype = "unknown"
+                meta = {"column": col, "type": itype}
+                # expose underlying covered columns for spatial indexes
+                try:
+                    cols = getattr(idx_obj, "_columns", None)
+                    if cols:
+                        meta["columns"] = list(cols)
+                except Exception:
+                    pass
+                indexed.append(meta)
+            if indexed:
+                result.append({"table": table_name, "indexes": indexed})
+        return {"ok": True, "tables": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/drop_index")
+def drop_index(table_name: str, column: str):
+    """Remove the index files for a table.column and update the catalog."""
+    try:
+        executor.schema_manager.drop_index(table_name, column)
+        return {"ok": True, "message": f"Index dropped for {table_name}({column})"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/reload_catalog")
+def reload_catalog():
+    """Reload catalog.json from disk into memory (reinstantiates indexes)."""
+    try:
+        executor.schema_manager.reload_catalog()
+        return {"ok": True, "message": "Catalog reloaded"}
     except Exception as e:
         return {"ok": False, "error": str(e)}

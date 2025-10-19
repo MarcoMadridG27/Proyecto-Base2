@@ -57,6 +57,18 @@ class SequentialIndex:
 
 	def find(self, key: Any) -> List[int]:
 		k = str(key)
+		# helper to try parse numeric
+		def _to_num(x: Any):
+			try:
+				if isinstance(x, (int, float)):
+					return x
+				s = str(x)
+				if s.isdigit():
+					return int(s)
+				return float(s)
+			except Exception:
+				return None
+		k_num = _to_num(k)
 		# search in main (binary-like since sorted list)
 		offsets: List[int] = []
 		lo, hi = 0, len(self._main) - 1
@@ -64,13 +76,24 @@ class SequentialIndex:
 		while lo <= hi:
 			mid = (lo + hi) // 2
 			mk = self._main[mid][0]
-			if mk == k:
-				first = mid
-				hi = mid - 1
-			elif mk < k:
-				lo = mid + 1
+			# try numeric comparison when possible
+			mk_num = _to_num(mk)
+			if k_num is not None and mk_num is not None:
+				if mk_num == k_num:
+					first = mid
+					hi = mid - 1
+				elif mk_num < k_num:
+					lo = mid + 1
+				else:
+					hi = mid - 1
 			else:
-				hi = mid - 1
+				if mk == k:
+					first = mid
+					hi = mid - 1
+				elif mk < k:
+					lo = mid + 1
+				else:
+					hi = mid - 1
 		if first != -1:
 			# collect contiguous equals
 			i = first
@@ -84,16 +107,65 @@ class SequentialIndex:
 		return offsets
 
 	def range_search(self, begin_key: Any, end_key: Any) -> List[int]:
-		bk, ek = str(begin_key), str(end_key)
+		"""
+		Range search that attempts numeric comparison when possible.
+		If both begin_key and end_key can be parsed as numbers, perform numeric
+		comparison. Otherwise fallback to string comparison.
+		When the main area is numeric-sorted (reconstruct sorts numerically when
+		possible), we can break early once the key exceeds end_key.
+		"""
 		res: List[int] = []
-		# main is sorted
+		# Try to parse begin/end as numbers
+		def _to_num(x: Any):
+			try:
+				# prefer int when exact
+				if isinstance(x, (int, float)):
+					return x
+				s = str(x)
+				if s.isdigit():
+					return int(s)
+				return float(s)
+			except Exception:
+				return None
+
+		bk_num = _to_num(begin_key)
+		ek_num = _to_num(end_key)
+		numeric_range = (bk_num is not None and ek_num is not None)
+
+		# Helper to compare a key value according to numeric_range
+		def in_range(kstr: str):
+			if numeric_range:
+				knum = _to_num(kstr)
+				if knum is None:
+					return False, None
+				return (bk_num <= knum <= ek_num), knum
+			else:
+				return (str(begin_key) <= kstr <= str(end_key)), None
+
+		# main is sorted; detect if main keys are numeric so we can safely break early
+		def _main_all_numeric():
+			for k, _ in self._main:
+				try:
+					_ = float(k)
+				except Exception:
+					return False
+			return True
+
+		main_numeric = _main_all_numeric()
 		for mk, mo in self._main:
-			if bk <= mk <= ek:
+			ok, knum = in_range(mk)
+			if ok:
 				res.append(mo)
-		# aux is unsorted
+			# early stop when numeric_range and main is numeric-sorted
+			if numeric_range and main_numeric and knum is not None and knum > ek_num:
+				break
+
+		# aux is unsorted; must scan all
 		for ak, ao in self._aux:
-			if bk <= ak <= ek:
+			ok, _ = in_range(ak)
+			if ok:
 				res.append(ao)
+
 		return res
 
 	def remove(self, key: Any) -> None:
@@ -109,7 +181,23 @@ class SequentialIndex:
 		delete_keys = {k.split("::", 1)[1] for k, o in self._aux if k.startswith("__DEL__::")}
 		candidates = [x for x in self._main if x[0] not in delete_keys]
 		candidates.extend([(k, o) for k, o in self._aux if not k.startswith("__DEL__::")])
-		candidates.sort(key=lambda it: it[0])
+
+		# Decide whether we can sort numerically: test if all keys parse as numbers
+		def _all_numeric(items):
+			for k, _ in items:
+				try:
+					_ = float(k)
+				except Exception:
+					return False
+			return True
+
+		if _all_numeric(candidates):
+			# sort by numeric value
+			candidates.sort(key=lambda it: float(it[0]))
+		else:
+			# default lexicographic sort
+			candidates.sort(key=lambda it: it[0])
+
 		self._main = candidates
 		self._aux = []
 		self._save()

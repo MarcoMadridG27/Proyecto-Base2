@@ -62,9 +62,203 @@
         "type": "VARCHAR[100]"
       }
     ],
-    "indexes": [
-      "common_name",
-      "observation_id"
-    ]
+    "indexes": {
+      "common_name": "hash",
+      "observation_id": "hash"
+    }
+  },
+  "prueba2": {
+    "columns": [
+      {
+        "name": "observation_id",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "common_name",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "scientific_name",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "family",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "genus",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "observed_length_(m)",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "observed_weight_(kg)",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "age_class",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "sex",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "date_of_observation",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "country/region",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "habitat_type",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "conservation_status",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "observer_name",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "notes",
+        "type": "VARCHAR[100]"
+      }
+    ],
+    "indexes": {
+      "observation_id": "hash",
+      "common_name": "hash"
+    }
+  },
+  "event": {
+    "columns": [
+      {
+        "name": "url",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "title",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "subtitle",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "dates",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "prize_pool",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "location",
+        "type": "VARCHAR[100]"
+      }
+    ],
+    "indexes": {}
+  },
+  "matches": {
+    "columns": [
+      {
+        "name": "date",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "match_id",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "time",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "team1",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "score1",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "team2",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "score2",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "score",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "winner",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "status",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "week",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "stage",
+        "type": "VARCHAR[100]"
+      }
+    ],
+    "indexes": {
+      "match_id": "btree"
+    }
+  },
+  "atropellos": {
+    "columns": [
+      {
+        "name": "x",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "y",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "ubicacion",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "fallecidos",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "graves",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "menosgrave",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "leve",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "accidentes",
+        "type": "VARCHAR[100]"
+      }
+    ],
+    "indexes": {
+      "y": "rtree",
+      "x__y": "rtree",
+      "x": "rtree",
+      "x__ubicacion": "rtree"
+    }
   }
 }

@@ -1,6 +1,52 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
+// Nueva sección para mostrar tablas con índices
+function TablesWithIndexes() {
+  const [tables, setTables] = useState<{table: string, indexes: {column: string, type: string}[]}[]>([])
+  const fetchTables = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/tables_with_indexes")
+      const data = await res.json()
+      if (data.ok) setTables(data.tables)
+      else setTables([])
+    } catch (e) {
+      setTables([])
+    }
+  }
+
+  useEffect(() => {
+    fetchTables()
+  }, [])
+
+  return (
+    <div className="mb-8">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold mb-2">Tables with Indexes</h2>
+        <button onClick={fetchTables} className="text-sm text-primary underline">Refresh</button>
+      </div>
+      <ul className="list-disc ml-6">
+        {tables.length === 0 && <li className="text-muted-foreground">No indexed tables found</li>}
+        {tables.map((t, idx) => {
+          // t.indexes may be undefined (old format) or an array of {column, type}
+          let info = ""
+          if (Array.isArray((t as any).indexes)) {
+            info = (t as any).indexes.map((i: any) => `${i.column} (${i.type})`).join(", ")
+          } else if (Array.isArray((t as any).indexed_columns)) {
+            info = (t as any).indexed_columns.join(", ")
+          } else {
+            info = "(unknown)"
+          }
+          return (
+            <li key={idx}>
+              <span className="font-semibold">{t.table}</span>: {info}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
 import { cn } from "@/lib/utils"
 import { Line } from "react-chartjs-2"; // Para el gráfico de performance
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'; // Importa LineElement
@@ -24,6 +70,8 @@ export function IndexExplorer({ defaultTable }: { defaultTable?: string }) {
   const [loadingIndex, setLoadingIndex] = useState<string | null>(null)
   const [tableName, setTableName] = useState(defaultTable || "")
   const [columnName, setColumnName] = useState("")
+  const [secondColumn, setSecondColumn] = useState("")
+  const [thirdColumn, setThirdColumn] = useState("")
   const [columns, setColumns] = useState<string[]>([]) // Añadido para las columnas
   const [tableExists, setTableExists] = useState(false) // Verifica si la tabla existe
 
@@ -90,10 +138,21 @@ export function IndexExplorer({ defaultTable }: { defaultTable?: string }) {
 
     setLoadingIndex(indexType)
     try {
+      const payload: any = { index_type: indexType, table_name: tableName }
+      // for spatial indexes allow explicit columns list
+      if (indexType === "rtree" || indexType === "kdtree") {
+        const cols = [columnName].filter(Boolean)
+        if (secondColumn) cols.push(secondColumn)
+        if (thirdColumn) cols.push(thirdColumn)
+        payload.columns = cols
+      } else {
+        payload.column = columnName
+      }
+
       const res = await fetch("http://localhost:8000/create_index", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ index_type: indexType, table_name: tableName, column: columnName }),
+        body: JSON.stringify(payload),
       })
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -148,6 +207,7 @@ export function IndexExplorer({ defaultTable }: { defaultTable?: string }) {
 
   return (
     <div className="p-8 space-y-8">
+      <TablesWithIndexes />
       {/* Header */}
       <div className="animate-fade-in">
         <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-foreground via-foreground to-foreground/70 bg-clip-text text-transparent">
@@ -173,6 +233,23 @@ export function IndexExplorer({ defaultTable }: { defaultTable?: string }) {
           className="max-w-sm"
           list="columns-list" // Habilitar lista de autocompletado
         />
+        {/* Secondary/tertiary selectors for spatial indexes */}
+        {(selectedIndex === "rtree" || selectedIndex === "kdtree") && (
+          <>
+            <select value={secondColumn} onChange={(e) => setSecondColumn(e.target.value)} className="max-w-xs p-2 rounded border">
+              <option value="">-- secondary column (e.g. y or lon) --</option>
+              {columns.filter(c => c !== columnName).map((col, idx) => (
+                <option key={idx} value={col}>{col}</option>
+              ))}
+            </select>
+            <select value={thirdColumn} onChange={(e) => setThirdColumn(e.target.value)} className="max-w-xs p-2 rounded border">
+              <option value="">-- optional 3rd column (z/alt) --</option>
+              {columns.filter(c => c !== columnName && c !== secondColumn).map((col, idx) => (
+                <option key={idx} value={col}>{col}</option>
+              ))}
+            </select>
+          </>
+        )}
         <datalist id="columns-list">
           {columns.map((col, idx) => (
             <option key={idx} value={col} />
