@@ -4,11 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="hash-casi-terminado">
+    <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="correciones">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/dbms/bplustree.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/bplustree.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/dbms/extendible_hash.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/extendible_hash.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/dbms/isam.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/isam.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/dbms/sequential.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/sequential.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/model/schema_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/model/schema_manager.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/docker-compose.yml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -304,7 +305,15 @@
       <option name="project" value="LOCAL" />
       <updated>1760564742327</updated>
     </task>
-    <option name="localTasksCounter" value="20" />
+    <task id="LOCAL-00020" summary="correciones">
+      <option name="closed" value="true" />
+      <created>1760568184483</created>
+      <option name="number" value="00020" />
+      <option name="presentableId" value="LOCAL-00020" />
+      <option name="project" value="LOCAL" />
+      <updated>1760568184483</updated>
+    </task>
+    <option name="localTasksCounter" value="21" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -320,6 +329,7 @@
     <MESSAGE value="hash" />
     <MESSAGE value="mejoras" />
     <MESSAGE value="hash-casi-terminado" />
-    <option name="LAST_COMMIT_MESSAGE" value="hash-casi-terminado" />
+    <MESSAGE value="correciones" />
+    <option name="LAST_COMMIT_MESSAGE" value="correciones" />
   </component>
 </project>

@@ -3,36 +3,32 @@ import struct
 from typing import List, Tuple, Optional
 
 class ExtendibleHash:
-    """
-    Índice de Hash Extensible con directorio en disco.
-
-    Archivos:
-      - <name>.dir : header(D, dir_count) + dir_count celdas (solo bucket_ptr por celda)
-      - <name>.bkt : buckets encadenables (d, count, next_ptr, suffix, entries...)
-
-    Convenciones:
-      - D: profundidad global (tamaño del directorio = 2^D celdas)
-      - Cada bucket guarda:
-          d       : profundidad local (bits de sufijo que atiende)
-          count   : # entradas efectivas escritas
-          next_ptr: encadenamiento (0 = fin)
-          suffix  : entero que representa los últimos d bits que atiende
-      - Para dirigir:
-          idx = hash(key) % (1 << D)
-          bucket_ptr = dir[idx]
-          Se compara/redistribuye por los últimos d (o d+1) bits de idx, no por el valor de la clave.
-    """
-    # ===== formatos =====
-    IDX_HDR_FMT  = "<ii"   # D, dir_count
+    # Header del directorio: D (profundidad global), dir_count (2^D)
+    IDX_HDR_FMT  = "<ii"
     IDX_HDR_SIZE = struct.calcsize(IDX_HDR_FMT)
-    DIR_CELL_FMT = "<i"    # bucket_ptr
+
+    # Celda del directorio: bucket_ptr
+    DIR_CELL_FMT  = "<i"
     DIR_CELL_SIZE = struct.calcsize(DIR_CELL_FMT)
 
-    BKT_HDR_FMT  = "<iiii" # d, count, next_ptr, suffix
+    # Header de bucket: d (prof. local), count (#entradas), next_ptr (encadenado), suffix (bits que atiende)
+    BKT_HDR_FMT  = "<iiii"
     BKT_HDR_SIZE = struct.calcsize(BKT_HDR_FMT)
 
-    def __init__(self, table: str, column_type: str, idx_name: Optional[str] = None,
-                 D: int = 9, bucket_capacity: int = 100):
+    def __init__(self,
+                 table: str,
+                 column_type: str,
+                 idx_name: Optional[str] = None,
+                 D: int = 9,
+                 bucket_capacity: int = 100,
+                 max_chain: int = 2):
+        """
+        Crea/abre archivos del índice.
+        - column_type: 'i' (int32), 'f' (float32), 'Ns' (cadena fija, ej. '20s')
+        - D: profundidad inicial global (>=1)
+        - bucket_capacity: entradas por bucket
+        - max_chain: longitud máxima de overflow antes de forzar rehash
+        """
         base_dir = "/app/src/dbms/data_index"
         os.makedirs(base_dir, exist_ok=True)
         name = f"{table}_{(idx_name or 'extendible')}"
@@ -41,30 +37,31 @@ class ExtendibleHash:
 
         self.bucket_capacity = bucket_capacity
         self.KEY_FMT = column_type
+        self.MAX_CHAIN = max_chain
 
-        self.ENTRY_FMT  = f"<{self.KEY_FMT}i"  # (key, row_off)
+        # Entrada en bucket = (key, row_off)
+        self.ENTRY_FMT  = f"<{self.KEY_FMT}i"
         self.ENTRY_SIZE = struct.calcsize(self.ENTRY_FMT)
         self.BUCKET_SIZE = self.BKT_HDR_SIZE + self.bucket_capacity * self.ENTRY_SIZE
 
-        # Inicializar archivos si no existen: D>=1, dos buckets base (d=1, suffix=0/1)
+        # Si no existen los archivos, inicializa con D>=1 y dos buckets base (d=1, suffix=0/1)
         if (not os.path.exists(self.index_path)) or (not os.path.exists(self.data_path)):
             self._init_files(max(1, D))
 
-    # =================== init helpers ===================
+    # ===== inicialización =====
 
     def _init_files(self, D: int):
-        dir_count = pow(2,D)
+        """
+        Crea el directorio y dos buckets base (d=1) y reparte las celdas por el último bit.
+        Mantiene tu lógica de comparar el último bit como string binario.
+        """
+        dir_count = 1 << D
         with open(self.index_path, "wb") as fi, open(self.data_path, "wb") as fb:
-            # header del directorio
             fi.write(struct.pack(self.IDX_HDR_FMT, D, dir_count))
-            # crear dos buckets base (vacíos): d=1, suffix=0 y suffix=1
             b0 = self._alloc_bucket(fb, local_depth=1, suffix=0)
             b1 = self._alloc_bucket(fb, local_depth=1, suffix=1)
-            # poblar celdas: último bit (LSB) decide
             for idx in range(dir_count):
-                # Convertir el índice a binario
-                bin_idx = bin(idx)[2:].zfill(D)  # Asegurarse de que tenga D bits
-                # Usamos el último bit de la cadena binaria
+                bin_idx = bin(idx)[2:].zfill(D)
                 if bin_idx[-1] == "0":
                     fi.write(struct.pack(self.DIR_CELL_FMT, b0))
                 else:
@@ -72,56 +69,110 @@ class ExtendibleHash:
 
     def _alloc_bucket(self, fb, local_depth: int, suffix: int) -> int:
         """
-        Reserva un bucket vacío al final del .bkt y retorna su offset (puntero).
+        Reserva un bucket vacío al final del archivo .bkt y devuelve su offset.
         """
         off = fb.seek(0, os.SEEK_END)
         fb.write(struct.pack(self.BKT_HDR_FMT, local_depth, 0, 0, suffix))
         fb.write(b"\x00" * (self.bucket_capacity * self.ENTRY_SIZE))
         return off
 
-    # =================== directorio ===================
+    # ===== directorio =====
 
     def _read_index_header(self) -> Tuple[int, int]:
         with open(self.index_path, "rb") as f:
             return struct.unpack(self.IDX_HDR_FMT, f.read(self.IDX_HDR_SIZE))
 
+    def _write_index_header(self, D: int, dir_count: int):
+        """
+        Actualiza solo el header del directorio.
+        """
+        with open(self.index_path, "r+b") as f:
+            f.seek(0)
+            f.write(struct.pack(self.IDX_HDR_FMT, D, dir_count))
+
     def _read_dir_cell(self, idx: int) -> int:
         """
-        Lee la celda del directorio en posición idx.
-        Retorna bucket_ptr.
+        Devuelve el puntero de bucket guardado en la celda idx del directorio.
         """
         with open(self.index_path, "rb") as f:
             f.seek(self.IDX_HDR_SIZE + idx * self.DIR_CELL_SIZE)
             return struct.unpack(self.DIR_CELL_FMT, f.read(self.DIR_CELL_SIZE))[0]
 
     def _write_dir_cell(self, idx: int, bucket_ptr: int):
+        """
+        Escribe el puntero de bucket en la celda idx del directorio.
+        """
         with open(self.index_path, "r+b") as f:
             f.seek(self.IDX_HDR_SIZE + idx * self.DIR_CELL_SIZE)
             f.write(struct.pack(self.DIR_CELL_FMT, bucket_ptr))
 
+    def _read_all_dir_cells(self) -> List[int]:
+        """
+        Lee todas las celdas del directorio en una lista.
+        """
+        D, dir_count = self._read_index_header()
+        cells = []
+        with open(self.index_path, "rb") as f:
+            f.seek(self.IDX_HDR_SIZE)
+            for _ in range(dir_count):
+                cells.append(struct.unpack(self.DIR_CELL_FMT, f.read(self.DIR_CELL_SIZE))[0])
+        return cells
+
+    def _write_all_dir_cells(self, cells: List[int]):
+        """
+        Escribe de una vez todas las celdas del directorio desde una lista.
+        """
+        D, dir_count = self._read_index_header()
+        if len(cells) != dir_count:
+            raise ValueError("Tamaño de celdas no coincide con dir_count.")
+        with open(self.index_path, "r+b") as f:
+            f.seek(self.IDX_HDR_SIZE)
+            for ptr in cells:
+                f.write(struct.pack(self.DIR_CELL_FMT, ptr))
+
+    def _double_directory(self):
+        """
+        Rehash global del directorio: D := D+1 y duplica celdas (copia punteros).
+        """
+        D, dir_count = self._read_index_header()
+        old_cells = self._read_all_dir_cells()
+        new_cells = [0] * (dir_count * 2)
+        for i, ptr in enumerate(old_cells):
+            new_cells[i] = ptr
+            new_cells[i + dir_count] = ptr
+        self._write_index_header(D + 1, dir_count * 2)
+        self._write_all_dir_cells(new_cells)
+
     def _scan_dir_cells_pointing_to(self, bucket_off: int) -> List[int]:
         """
-        Retorna todos los índices 'i' del directorio cuyas celdas apuntan a bucket_off.
-        (Se usa en split para reasignar sólo esas celdas.)
+        Retorna los índices de celdas que apuntan a bucket_off.
+        (Se usa en split local para reasignar solo esas celdas.)
         """
         D, dir_count = self._read_index_header()
         idxs = []
         with open(self.index_path, "rb") as f:
             f.seek(self.IDX_HDR_SIZE)
             for i in range(dir_count):
-                ptr = struct.unpack(self.DIR_CELL_FMT, f.read(self.DIR_CELL_SIZE))
+                ptr = struct.unpack(self.DIR_CELL_FMT, f.read(self.DIR_CELL_SIZE))[0]
                 if ptr == bucket_off:
                     idxs.append(i)
         return idxs
 
-    # =================== buckets ===================
+    # ===== buckets =====
+
     def _write_bucket_header(self, off: int, d: int, cnt: int, nxt: int, suffix: int):
-        """Actualiza SOLO el header del bucket en 'off' sin tocar sus entries."""
+        """
+        Actualiza solo el header de un bucket en 'off' (no toca entradas).
+        """
         with open(self.data_path, "r+b") as f:
             f.seek(off)
             f.write(struct.pack(self.BKT_HDR_FMT, d, cnt, nxt, suffix))
 
     def _read_bucket(self, off: int):
+        """
+        Lee header + todas las entradas (incluyendo espacios vacíos).
+        Retorna (d, count, next_ptr, suffix, entries_list)
+        """
         with open(self.data_path, "rb") as f:
             f.seek(off)
             d, cnt, nxt, suffix = struct.unpack(self.BKT_HDR_FMT, f.read(self.BKT_HDR_SIZE))
@@ -140,6 +191,9 @@ class ExtendibleHash:
 
     def _write_bucket(self, off: int, d: int, cnt: int, nxt: int, suffix: int,
                       entries: List[Tuple[object, int]]):
+        """
+        Escribe header + entries (rellena con ceros hasta la capacidad del bucket).
+        """
         with open(self.data_path, "r+b") as f:
             f.seek(off)
             f.write(struct.pack(self.BKT_HDR_FMT, d, cnt, nxt, suffix))
@@ -155,38 +209,122 @@ class ExtendibleHash:
                 else:
                     f.write(b"\x00" * self.ENTRY_SIZE)
 
-    # =================== hash y bits ===================
+    # ===== hash =====
 
     def _hash_mod(self, key, dir_count: int) -> int:
         """
-        idx = hash(key) % dir_count
+        idx = hash(key) % dir_count (dir_count = 2^D)
+        Mantiene tu comportamiento: enteros, flotantes y cadenas.
         """
-        if self.KEY_FMT.endswith("s"):  # Si la clave es una cadena
+        if self.KEY_FMT.endswith("s"):
             s = key if isinstance(key, str) else str(key)
             h = 0
             for ch in s.encode("utf-8"):
-                h = (h * 257 + ch) & 0x7fffffff  # Calculamos un hash acumulativo con base 257
-            return h % dir_count  # Aplicamos el módulo con 2^D (dir_count)
+                h = (h * 257 + ch) & 0x7fffffff
+            return h % dir_count
+        elif self.KEY_FMT == "i":
+            return (int(key) & 0x7fffffff) % dir_count
+        else:
+            return (int(abs(float(key)) * 1_000_003) & 0x7fffffff) % dir_count
 
-        elif self.KEY_FMT == "i":  # Si la clave es un entero
-            return (int(key) & 0x7fffffff) % dir_count  # Aseguramos que el valor esté dentro del rango
+    # ===== utilidades de cadena (overflow) =====
 
-        else:  # Si la clave es un flotante
-            return (int(abs(float(key)) * 1_000_003) & 0x7fffffff) % dir_count  # Para flotantes
+    def _collect_chain(self, base_off: int) -> List[Tuple[object, int]]:
+        """
+        Reúne todas las entradas del bucket base y su cadena (para reinsertar en split local).
+        """
+        all_entries: List[Tuple[object, int]] = []
+        off = base_off
+        while off != 0:
+            d, cnt, nxt, suffix, entries = self._read_bucket(off)
+            all_entries.extend(entries[:cnt])
+            off = nxt
+        return all_entries
 
-    # =================== búsqueda ===================
+    def _chain_length(self, base_off: int) -> int:
+        """
+        Retorna el número de eslabones de overflow (no cuenta el base).
+        """
+        length = 0
+        off = base_off
+        while off != 0:
+            d, cnt, nxt, suffix, entries = self._read_bucket(off)
+            if nxt != 0:
+                length += 1
+            off = nxt
+        return length
+
+    # ===== split local =====
+
+    def _split_bucket(self, base_off: int, d: int, suffix: int):
+        """
+        Divide el bucket base en dos hijos con d' = d+1 y sufijos "0+suffix" y "1+suffix".
+        Mantiene tu forma de componer y comparar sufijos como strings binarios.
+        Solo reasigna celdas del directorio que originalmente apuntaban a base_off.
+        """
+        D, dir_count = self._read_index_header()
+        new_depth = d + 1
+
+        # Construye los nuevos sufijos como cadenas binarias (manteniendo tu diseño)
+        s0 = "0" + bin(suffix)[2:].zfill(d)
+        s1 = "1" + bin(suffix)[2:].zfill(d)
+
+        # Crea el bucket derecho y reescribe el izquierdo (base) con d' y nuevo suffix
+        with open(self.data_path, "r+b") as fb:
+            new_off_right = self._alloc_bucket(fb, local_depth=new_depth, suffix=int(s1, 2))
+            self._write_bucket(base_off, new_depth, 0, 0, int(s0, 2), [])
+
+        # Solo modificamos las celdas que apuntaban a base_off
+        idxs = self._scan_dir_cells_pointing_to(base_off)
+
+        # Comparamos por los últimos new_depth bits del índice en forma de string
+        for idx in idxs:
+            last_bits = bin(idx)[2:].zfill(D)[-new_depth:]
+            if last_bits == s0:
+                self._write_dir_cell(idx, base_off)      # hijo izquierdo
+            else:
+                self._write_dir_cell(idx, new_off_right) # hijo derecho
+
+    # ===== rehash de cadena =====
+
+    def _rehash_overflow_chain(self, base_off: int):
+        """
+        Aumenta D en 1 y reinyecta solo las entradas de los buckets encadenados,
+        cortando la cadena en el base (nxt := 0). No mueve entradas del base.
+        """
+        # duplicamos el directorio (D := D+1)
+        self._double_directory()
+
+        # recolectar entradas de la cadena (no del base)
+        d0, c0, nxt0, s0, e0 = self._read_bucket(base_off)
+        off = nxt0
+        to_reinsert: List[Tuple[object, int]] = []
+
+        while off != 0:
+            d, cnt, nxt, suffix, entries = self._read_bucket(off)
+            to_reinsert.extend(entries[:cnt])
+            # vacía el bucket encadenado (opcional: queda disponible)
+            self._write_bucket(off, d, 0, 0, suffix, [])
+            off = nxt
+
+        # cortar la cadena del base
+        self._write_bucket(base_off, d0, c0, 0, s0, e0)
+
+        # reinsertar esas entradas con el nuevo D
+        for k, ro in to_reinsert:
+            self.insert(k, ro)
+
+    # ===== búsqueda =====
 
     def search(self, key) -> List[int]:
         """
-        Busca offsets con clave == key:
-          idx = hash(key) % 2^D
-          celda = directorio[idx]  (verifica cell_idx)
-          bucket base -> seguir encadenamiento comparando suffix con idx.
+        Busca y devuelve todos los row_off cuya clave == key, recorriendo el base y su cadena.
         """
         D, dir_count = self._read_index_header()
         idx = self._hash_mod(key, dir_count)
         bkt_off = self._read_dir_cell(idx)
-        res = []
+
+        res: List[int] = []
         while bkt_off != 0:
             d, cnt, nxt, suffix, entries = self._read_bucket(bkt_off)
             for i in range(cnt):
@@ -194,18 +332,18 @@ class ExtendibleHash:
                 if k == key:
                     res.append(ro)
             bkt_off = nxt
-
         return res
 
-    # =================== inserción ===================
+    # ===== inserción =====
 
     def insert(self, key, row_off):
         """
-        Insertar (key, row_off):
-          - Si bucket base tiene espacio: insertar y listo.
-          - Si lleno y d<D: split -> dos hijos con d+1, sufijos 0sufijo / 1sufijo,
-            redistribuir celdas del directorio que apuntaban a base, reinserción.
-          - Si lleno y d==D: overflow (encadenar).
+        Inserta (key, row_off):
+          1) Si el bucket base tiene espacio: insertar.
+          2) Si está lleno y d < D: split local, recolectar base+cadena y reinsertar.
+          3) Si está lleno y d == D:
+             - Si la cadena supera MAX_CHAIN: rehash de la cadena (D := D+1, reinserción solo de overflow), reintentar.
+             - Si no supera: agregar al final de la cadena (crear nuevo bucket si el último está lleno).
         """
         D, dir_count = self._read_index_header()
         idx = self._hash_mod(key, dir_count)
@@ -213,7 +351,7 @@ class ExtendibleHash:
         bkt_off = self._read_dir_cell(idx)
         d, cnt, nxt, suffix, entries = self._read_bucket(bkt_off)
 
-        # caso 1: hay espacio en el bucket base
+        # Caso 1: espacio en el base
         if cnt < self.bucket_capacity:
             if cnt < len(entries):
                 entries[cnt] = (key, row_off)
@@ -223,51 +361,60 @@ class ExtendibleHash:
             self._write_bucket(bkt_off, d, cnt, nxt, suffix, entries)
             return
 
-        # caso 2: split local si d < D
+        # Caso 2: split local si d < D
         if d < D:
-            old_entries = self._collect_chain(bkt_off)  # Recoge todas las entradas del bucket base y su cadena.
+            all_entries = self._collect_chain(bkt_off)  # base + cadena (entradas válidas)
             self._split_bucket(bkt_off, d, suffix)
-            for i in range(len(old_entries)):
-                k, ro = old_entries[i]
+            for k, ro in all_entries:
                 self.insert(k, ro)
             self.insert(key, row_off)
             return
 
-        # caso 3: overflow si d == D
+        # Caso 3: d == D → overflow controlado por longitud de cadena
+        chain_len = self._chain_length(bkt_off)
+        if chain_len >= self.MAX_CHAIN:
+            # Forzar rehash de la cadena (no del base)
+            self._rehash_overflow_chain(bkt_off)
+            # Reintentar la inserción ya con D+1
+            self.insert(key, row_off)
+            return
+
+        # Insertar en el último bucket de la cadena (o crear uno nuevo al final)
         off = bkt_off
         last_off = bkt_off
+        last_hdr = (d, cnt, nxt, suffix, entries)
         while off != 0:
             last_off = off
-            d, cnt, nxt, suffix, entries = self._read_bucket(off)
-            off = nxt
-        # si hay espacio en el bucket encadenado
-        if cnt < self.bucket_capacity:
-            if cnt < len(entries):
-                entries[cnt] = (key, row_off)
+            d2, c2, n2, s2, e2 = self._read_bucket(off)
+            last_hdr = (d2, c2, n2, s2, e2)
+            off = n2
+
+        d2, c2, n2, s2, e2 = last_hdr
+        if c2 < self.bucket_capacity:
+            if c2 < len(e2):
+                e2[c2] = (key, row_off)
             else:
-                entries.append((key, row_off))
-            cnt += 1
-            self._write_bucket(last_off, d, cnt, nxt, suffix, entries)
-            return
+                e2.append((key, row_off))
+            c2 += 1
+            self._write_bucket(last_off, d2, c2, n2, s2, e2)
         else:
+            # El último está lleno: encadenar uno nuevo y escribir ahí
             with open(self.data_path, "r+b") as fb:
-                new_off = self._alloc_bucket(fb, local_depth=d, suffix=suffix)
-        # encadenar y escribir nueva entrada en el overflow
-        self._write_bucket(last_off, d, cnt, new_off, suffix, entries)
-        self._write_bucket(new_off, d, 1, 0, suffix, [(key, row_off)])
-        return
-    # =================== delete ===================
+                new_off = self._alloc_bucket(fb, local_depth=d2, suffix=s2)
+            self._write_bucket(last_off, d2, c2, new_off, s2, e2)
+            self._write_bucket(new_off, d2, 1, 0, s2, [(key, row_off)])
+
+    # ===== borrado =====
 
     def delete(self, key) -> List[int]:
         """
-        Elimina TODAS las ocurrencias de 'key' en el bucket base y su cadena.
-        - Compacta localmente (swap con el último válido) dentro de cada bucket.
-        - Decrementa 'count'.
-        - Si un bucket NO base queda vacío, se desencadena (prev.next_ptr salta ese bucket) *actualizando solo su header*.
-        - Si el bucket BASE queda vacío, redirige TODAS las celdas del directorio que lo apuntaban a su 'nxt'.
-        Retorna offsets eliminados o [-1] si no encontró nada.
+        Elimina todas las ocurrencias de 'key' en base + cadena.
+        Compacta localmente con 'swap con el último válido'.
+        Si un bucket NO base queda vacío, lo salta en el encadenamiento (actualiza solo header del previo).
+        Si el bucket BASE queda vacío, re-dirige todas las celdas del directorio que lo apuntaban a su 'nxt'.
+        Devuelve los row_off eliminados o [-1] si no encontró.
         """
-        _, dir_count = self._read_index_header()
+        D, dir_count = self._read_index_header()
         idx = self._hash_mod(key, dir_count)
 
         base_off = self._read_dir_cell(idx)
@@ -276,8 +423,8 @@ class ExtendibleHash:
 
         removed: List[int] = []
 
-        prev_off = 0  # 0 => aún estamos en el base
-        prev_hdr = None  # (pd, pcnt, pnxt, psuffix) del bucket previo
+        prev_off = 0
+        prev_hdr = None   # (d, cnt, nxt, suffix) del bucket previo
         cur_off = base_off
 
         while cur_off != 0:
@@ -291,78 +438,31 @@ class ExtendibleHash:
                         removed.append(entries[i][1])
                         cnt -= 1
                         if i < cnt:
-                            entries[i] = entries[cnt]  # swap local
+                            entries[i] = entries[cnt]  # compactación local
                         changed = True
                     else:
                         i += 1
 
             if changed:
-                # Persistir bucket actual
                 self._write_bucket(cur_off, d, cnt, nxt, suffix, entries)
 
-                # Si el bucket quedó vacío
+                # Si queda vacío, hay que ajustar encadenamiento
                 if cnt == 0:
                     if prev_off != 0:
-                        # NO BASE: hacer prev.next_ptr = nxt (solo header)
+                        # bucket de overflow vacío: hacer prev.next_ptr = nxt (solo header)
                         pd, pcnt, pnxt, psuffix = prev_hdr
                         self._write_bucket_header(prev_off, pd, pcnt, nxt, psuffix)
-                        # avanzar saltando el bucket vacío (prev se mantiene)
                         cur_off = nxt
                         continue
                     else:
-                        # BASE vacío: redirigir todas las celdas del directorio que lo apuntan
+                        # base vacío: apuntar celdas del directorio al siguiente
                         for i_dir in self._scan_dir_cells_pointing_to(cur_off):
                             self._write_dir_cell(i_dir, nxt)
-                        # actualizar
                         cur_off = nxt
                         continue
-            # avanzar manteniendo referencia SOLO al header del previo (no entries)
+
             prev_off = cur_off
             prev_hdr = (d, cnt, nxt, suffix)
             cur_off = nxt
+
         return removed if removed else [-1]
-
-    # =================== split ===================
-
-    def _collect_chain(self, base_off: int) -> List[Tuple[object, int]]:
-        """Reúne TODAS las (key, row_off) del bucket base y su cadena."""
-        all_entries: List[Tuple[object, int]] = []
-        off = base_off
-        while off != 0:
-            d, cnt, nxt, suffix, entries = self._read_bucket(off)
-            all_entries.extend(entries[:cnt])
-            off = nxt
-        return all_entries
-
-    def _split_bucket(self, base_off: int, d: int, suffix: int):
-        """
-        Divide el *bucket* base en dos (hijos) y los distribuye entre dos nuevos buckets:
-        - El hijo izquierdo tendrá el sufijo 0 + sufijo original.
-        - El hijo derecho tendrá el sufijo 1 + sufijo original.
-
-        Redistribuye las celdas del directorio que apuntaban al *bucket* base según el sufijo.
-        Si un *bucket* se llena, se encadenará con otro nuevo *bucket*.
-        """
-        D, dir_count = self._read_index_header()
-
-        # Paso 1: Incrementar la profundidad de ambos nuevos buckets (d' = d + 1).
-        new_depth = d + 1
-
-        # Paso 2: Agregar un bit al principio del sufijo para los dos nuevos buckets:
-        s0 = "0" + bin(suffix)[2:].zfill(d)  # 0 + sufijo
-        s1 = "1" + bin(suffix)[2:].zfill(d)  # 1 + sufijo
-
-        # Paso 3: Crear los nuevos buckets (ambos con la misma profundidad y sufijos diferentes).
-        with open(self.data_path, "r+b") as fb:
-            new_off_1 = self._alloc_bucket(fb, local_depth=new_depth, suffix=int(s1, 2))  # Crea el primer nuevo bucket.
-            self._write_bucket(base_off, new_depth, 0, 0, int(s0, 2), [])  # Escribe el primer bucket con sufijo 0.
-
-        # Paso 4: Obtener las celdas del directorio que apuntan al bucket base.
-        idxs = self._scan_dir_cells_pointing_to(base_off)
-
-        # Paso 5: Redistribuir las celdas del directorio entre los nuevos buckets, basándonos en los sufijos.
-        for idx in idxs:
-            if bin(idx)[2:].zfill(D)[-new_depth:] == s0:
-                self._write_dir_cell(idx, base_off)
-            else:
-                self._write_dir_cell(idx, new_off_1)

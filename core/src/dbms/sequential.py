@@ -38,12 +38,6 @@ def ptr_to_loc(p: int) -> Tuple[bool, int]:
 # Formato (definido por la clase, seteado por SequentialFile)
 # ============================================================
 class EntrySF:
-    """
-    Registro con (offset real del registro en la tabla), value(key), next_ptr.
-    El formato binario lo provee SequentialFile configurando estas variables de clase:
-      - EntrySF.emp_format: str de struct (p.ej. "<ii i", "<i100s i", "<if i")
-      - EntrySF.value_kind: "i" | "f" | "<Ns" (termina en 's' para texto)
-    """
     emp_format: str = ""   # se setea desde SequentialFile
     value_kind: str = ""   # se setea desde SequentialFile
 
