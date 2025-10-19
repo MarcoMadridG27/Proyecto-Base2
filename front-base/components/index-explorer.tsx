@@ -1,6 +1,16 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
+import { cn } from "@/lib/utils"
+import { Line } from "react-chartjs-2"; // Para el gráfico de performance
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'; // Importa LineElement
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Network, GitBranch, Hash, Database, MapPin } from "lucide-react"
+import { toast } from "sonner"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Input } from "@/components/ui/input"
+
 // Nueva sección para mostrar tablas con índices
 function TablesWithIndexes() {
   const [tables, setTables] = useState<{table: string, indexes: {column: string, type: string}[]}[]>([])
@@ -47,15 +57,6 @@ function TablesWithIndexes() {
     </div>
   )
 }
-import { cn } from "@/lib/utils"
-import { Line } from "react-chartjs-2"; // Para el gráfico de performance
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'; // Importa LineElement
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Network, GitBranch, Hash, Database, MapPin } from "lucide-react"
-import { toast } from "sonner"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Input } from "@/components/ui/input"
 
 const indexTypes = [
   { id: "sequential", name: "Sequential Index", icon: Database, description: "Linear search through ordered data", complexity: "O(n)", color: "text-blue-400" },
