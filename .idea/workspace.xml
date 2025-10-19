@@ -4,11 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="terminado?">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/dbms/bplustree.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/bplustree.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/dbms/isam.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/isam.py" afterDir="false" />
-    </list>
+    <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="terminado?" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -319,7 +315,15 @@
       <option name="project" value="LOCAL" />
       <updated>1760883665834</updated>
     </task>
-    <option name="localTasksCounter" value="22" />
+    <task id="LOCAL-00022" summary="terminado?">
+      <option name="closed" value="true" />
+      <created>1760887224680</created>
+      <option name="number" value="00022" />
+      <option name="presentableId" value="LOCAL-00022" />
+      <option name="project" value="LOCAL" />
+      <updated>1760887224680</updated>
+    </task>
+    <option name="localTasksCounter" value="23" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">

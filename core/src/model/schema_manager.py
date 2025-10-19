@@ -322,7 +322,6 @@ class SchemaManager:
 
         # Sin WHERE => full-scan
         if not where:
-            print("ERORRRRR")
             for row in fm.scan_all():
                 out.append(self._project(row, columns))
                 if limit and len(out) >= limit:
