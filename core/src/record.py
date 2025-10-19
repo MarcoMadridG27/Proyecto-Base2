@@ -1,6 +1,12 @@
 # core/record.py
 import struct
 from datetime import datetime
+import os
+
+# global simple error aggregation for packing
+_pack_error_count = 0
+_pack_error_examples = []
+_DB_DEBUG = os.environ.get("DB_DEBUG", "0") == "1"
 
 class RecordSchema:
     """
@@ -94,7 +100,14 @@ class RecordSchema:
                         packed.extend([0.0, 0.0])
                         
             except Exception as e:
-                print(f"Error empaquetando columna {col['name']} con valor '{val}': {e}")
+                # Aggregate or print depending on debug flag
+                global _pack_error_count, _pack_error_examples
+                _pack_error_count += 1
+                if _DB_DEBUG:
+                    print(f"Error empaquetando columna {col['name']} con valor '{val}': {e}")
+                else:
+                    if len(_pack_error_examples) < 10:
+                        _pack_error_examples.append(f"{col['name']}='{val}': {e}")
                 # Valores por defecto en caso de error
                 if ctype == "INT":
                     packed.append(0)
@@ -135,3 +148,14 @@ class RecordSchema:
                 record[col["name"]] = [unpacked[i], unpacked[i+1]]
                 i += 2
         return record
+
+
+def get_pack_errors():
+    global _pack_error_count, _pack_error_examples
+    return _pack_error_count, list(_pack_error_examples)
+
+
+def reset_pack_errors():
+    global _pack_error_count, _pack_error_examples
+    _pack_error_count = 0
+    _pack_error_examples = []

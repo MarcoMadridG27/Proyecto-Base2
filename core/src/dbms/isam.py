@@ -7,39 +7,30 @@ INDEX_FACTOR = 20# se puede aumentar
 
 
 class Record:
-    FORMAT = 'i20sif20s'
+    """
+    Generic ISAM record containing only the indexed key (id) and the file offset
+    where the full table record lives. This makes ISAM independent from the table
+    schema: the index stores (id, offset) and queries can read the real record
+    from the table file using the offset.
+    FORMAT: 'ii' -> id:int, offset:int
+    """
+    FORMAT = 'ii'
     SIZE_OF_RECORD = struct.calcsize(FORMAT)
 
-    def __init__(self, id: int, producto: str, cantidad: int, precio: float, fecha: str):
-        self.id = id
-        self.producto = producto
-        self.cantidad = cantidad
-        self.precio = precio
-        self.fecha = fecha
+    def __init__(self, id: int, offset: int):
+        self.id = int(id)
+        self.offset = int(offset)
 
     def pack(self) -> bytes:
-        return struct.pack(
-            self.FORMAT,
-            self.id,
-            self.producto.encode('latin-1').ljust(20, b'\x00'),
-            self.cantidad,
-            self.precio,
-            self.fecha.encode('latin-1').ljust(20, b'\x00')
-        )
+        return struct.pack(self.FORMAT, self.id, self.offset)
 
     @staticmethod
     def unpack(data: bytes):
-        id, producto, cantidad, precio, fecha = struct.unpack(Record.FORMAT, data)
-        return Record(
-            id,
-            producto.decode('latin-1').strip('\x00'),
-            cantidad,
-            precio,
-            fecha.decode('latin-1').strip('\x00')
-        )
+        id, offset = struct.unpack(Record.FORMAT, data)
+        return Record(id, offset)
 
     def __str__(self):
-        return f"ID: {self.id}, Producto: {self.producto}, Cantidad: {self.cantidad}, Precio: {self.precio}, Fecha: {self.fecha}"
+        return f"ID: {self.id}, Offset: {self.offset}"
 
 
 class Page:
@@ -289,6 +280,20 @@ class ISAMMultinivel:
 
         return None
 
+    # Compatibility: return offsets lists like other index classes
+    def find(self, key: int):
+        """Return a list of offsets for records with id == key."""
+        res = []
+        rec = self.search(key)
+        if rec is None:
+            return res
+        # rec is a Record(id, offset)
+        try:
+            res.append(rec.offset)
+        except Exception:
+            pass
+        return res
+
     def insert(self, record: Record):
         self.records_buffer.append(record)
 
@@ -352,6 +357,7 @@ class ISAMMultinivel:
             records_by_page[nivel_3_page].append(record)
 
         for page_num, page_records in records_by_page.items():
+            # ordenar e intentar llenar espacio en la página principal
             page_records.sort(key=lambda r: r.id)
             page = self.read_page(self.nivel_3_data, page_num)
 
@@ -363,6 +369,7 @@ class ISAMMultinivel:
                 self.write_page(self.nivel_3_data, page_num, page)
                 page_records = page_records[to_insert:]
 
+            # si quedaron registros, colocarlos en la cadena de overflow
             if page_records:
                 self._insert_into_overflow_chain(page_num, page, page_records)
 
@@ -373,10 +380,10 @@ class ISAMMultinivel:
     def _insert_into_overflow_chain(self, page_num, page, records):
         records_to_insert = records.copy()
 
+        # Si no existe cadena de overflow, crearla nueva con batches
         if page.next_page == -1:
             first_overflow_num = None
             prev_num = -1
-
             while records_to_insert:
                 batch = records_to_insert[:BLOCK_FACTOR]
                 records_to_insert = records_to_insert[BLOCK_FACTOR:]
@@ -391,10 +398,11 @@ class ISAMMultinivel:
                     self.write_overflow_page(prev_num, prev_overflow)
                 prev_num = overflow_num
 
-            page.next_page = first_overflow_num
+            page.next_page = first_overflow_num if first_overflow_num is not None else -1
             self.write_page(self.nivel_3_data, page_num, page)
             return
 
+        # Si ya existe cadena de overflow, intentar llenar páginas existentes
         current_num = page.next_page
         prev_num = -1
 
@@ -410,6 +418,7 @@ class ISAMMultinivel:
             prev_num = current_num
             current_num = overflow_page.next_overflow
 
+        # Si aún quedan registros, anexar nuevas páginas de overflow
         while records_to_insert:
             batch = records_to_insert[:BLOCK_FACTOR]
             records_to_insert = records_to_insert[BLOCK_FACTOR:]
@@ -522,11 +531,8 @@ class ISAMMultinivel:
                     linea = linea.rstrip("\n")
                     list_linea = linea.split(";")
                     id = int(list_linea[0])
-                    nombre = list_linea[1]
-                    cantidad = int(list_linea[2])
-                    precio = float(list_linea[3])
-                    fecha = list_linea[4]
-                    record = Record(id, nombre, cantidad, precio, fecha)
+                    # for CSV loader we only need id and offset placeholder (0)
+                    record = Record(id, 0)
                     all_records.append(record)
             print(f"Total registros leídos: {len(all_records)}")
         except FileNotFoundError:
@@ -689,6 +695,17 @@ class ISAMMultinivel:
         results.sort(key=lambda r: r.id)
         return results
 
+    def range_search(self, begin_key: int, end_key: int):
+        """Compatibility wrapper returning offsets for records in [begin_key, end_key]."""
+        recs = self.search_range(begin_key, end_key)
+        offsets = []
+        for r in recs:
+            try:
+                offsets.append(r.offset)
+            except Exception:
+                continue
+        return offsets
+
 
 if __name__ == "__main__":
         # Limpiar archivos anteriores
@@ -771,9 +788,9 @@ if __name__ == "__main__":
         print("4. AGREGAR REGISTROS - add(registro)")
         print("=" * 70)
         nuevos_registros = [
-            Record(99001, "Producto Nuevo 1", 50, 125.50, "15/10/2024"),
-            Record(99002, "Producto Nuevo 2", 30, 89.99, "15/10/2024"),
-            Record(99003, "Producto Nuevo 3", 75, 210.00, "15/10/2024")
+            Record(99001, 0),
+            Record(99002, 0),
+            Record(99003, 0),
         ]
 
         for record in nuevos_registros:

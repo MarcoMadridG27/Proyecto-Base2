@@ -81,14 +81,86 @@ class SQLParser:
         }
 
     def _parse_insert(self, tokens):
+        # Support two forms:
         # INSERT INTO <table> VALUES (...)
+        # INSERT INTO <table> (col1, col2) VALUES (v1, v2)
         table = tokens[2]
-        open_paren = tokens.index("(")
-        close_paren = tokens.index(")")
-        values = tokens[open_paren+1:close_paren]
+        cols = None
+        values = None
+
+        if "values" in tokens:
+            # find values (...) parentheses
+            v_idx = tokens.index("values")
+            # find the '(' that starts VALUES(...) and match its closing ')' using nesting
+            open_vals = None
+            for i in range(v_idx + 1, len(tokens)):
+                if tokens[i] == "(":
+                    open_vals = i
+                    break
+            if open_vals is None:
+                raise ValueError("Malformed INSERT: missing VALUES(...)")
+            # find matching closing paren with nesting
+            level = 0
+            close_vals = None
+            for j in range(open_vals, len(tokens)):
+                if tokens[j] == "(":
+                    level += 1
+                elif tokens[j] == ")":
+                    level -= 1
+                    if level == 0:
+                        close_vals = j
+                        break
+            if close_vals is None:
+                raise ValueError("Malformed INSERT: missing closing ')' for VALUES")
+            values = tokens[open_vals + 1:close_vals]
+            # remove comma tokens so we get only actual value tokens
+            values = [t for t in values if t != ',']
+
+            # check for optional column list between table and VALUES
+            open_cols = None
+            for i in range(3, v_idx):
+                if tokens[i] == "(":
+                    open_cols = i
+                    break
+            if open_cols is not None:
+                # find matching closing paren for the column list using nesting
+                level = 0
+                close_cols = None
+                for j in range(open_cols, v_idx):
+                    if tokens[j] == "(":
+                        level += 1
+                    elif tokens[j] == ")":
+                        level -= 1
+                        if level == 0:
+                            close_cols = j
+                            break
+                if close_cols is None:
+                    raise ValueError("Malformed INSERT: missing closing ')' for column list")
+                # Build column names by grouping tokens until commas — this allows names containing '/'
+                cols = []
+                cur = []
+                for t in tokens[open_cols + 1:close_cols]:
+                    if t == ',':
+                        if cur:
+                            cols.append(''.join(cur))
+                            cur = []
+                        continue
+                    cur.append(t)
+                if cur:
+                    cols.append(''.join(cur))
+                # strip trailing commas/whitespace
+                cols = [c.strip().strip(',') for c in cols]
+        else:
+            # fallback: naive VALUES(...) detection (no explicit 'VALUES' token)
+            open_paren = tokens.index("(")
+            close_paren = tokens.index(")")
+            values = tokens[open_paren + 1:close_paren]
+            values = [t for t in values if t != ',']
+
         return {
             "operation": "insert",
             "table": table,
+            "columns": cols,
             "values": [v.strip(",") for v in values]
         }
 

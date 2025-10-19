@@ -1,54 +1,19 @@
+"""B+ tree index implementation.
+
+This module provides an on-disk B+ tree index (classes `BPlusNode` and
+`BPlusTree`). The file previously contained a demo `Record` type and
+simple `DataFile`/`IndexedFile` helpers for CSV demos; those have been
+removed so this module is index-only. Indexes in this project are
+expected to store keys -> pointers (offsets) into table data files.
+"""
+
 import struct
 import os
 import bisect
- 
-import csv
+import re
+
 ORDER = 500
 MIN_KEYS = ORDER // 2
-class Record:
-    FORMAT = 'i30si20s20s20sf10s'
-    RECORD_SIZE = struct.calcsize(FORMAT)
-
-    def __init__(self, Employee_ID, Employee_Name, Age, Country, Department, Position, Salary, Joining_Date):
-        self.Employee_ID = Employee_ID
-        self.Employee_Name = Employee_Name
-        self.Age = Age
-        self.Country = Country
-        self.Department = Department
-        self.Position = Position
-        self.Salary = Salary
-        self.Joining_Date = Joining_Date
-
-    def pack(self):
-        return struct.pack(
-            Record.FORMAT,
-            self.Employee_ID,
-            self.Employee_Name.encode('latin-1').ljust(30, b'\x00'),
-            self.Age,
-            self.Country.encode('latin-1').ljust(20, b'\x00'),
-            self.Department.encode('latin-1').ljust(20, b'\x00'),
-            self.Position.encode('latin-1').ljust(20, b'\x00'),
-            self.Salary,
-            self.Joining_Date.encode('latin-1').ljust(10, b'\x00')
-        )
-
-    @staticmethod
-    def unpack(data):
-        Employee_ID, Employee_Name, Age, Country, Department, Position, Salary, Joining_Date = struct.unpack(
-            Record.FORMAT, data)
-        return Record(
-            Employee_ID,
-            Employee_Name.decode().strip('\x00'),
-            Age,
-            Country.decode().strip('\x00'),
-            Department.decode().strip('\x00'),
-            Position.decode().strip('\x00'),
-            Salary,
-            Joining_Date.decode().strip('\x00')
-        )
-    
-
-
 
 class BPlusNode:
     HEADER_FORMAT = 'BBiii'  # node_type 1 , is_root 1 , num_keys 4, parent_ptr 4, next_leaf 4 
@@ -56,17 +21,17 @@ class BPlusNode:
     KEY_PTR_FORMAT = 'ii'  # (key, pointer)
     KEY_PTR_SIZE = struct.calcsize(KEY_PTR_FORMAT)
     SIZE_OF_NODE = HEADER_SIZE + ORDER *4 + (ORDER + 1) * 4  # ORDER claves + ORDER+1 punteros
-    
 
     def __init__(self, node_type=1, is_root=0, num_keys=0, parent_ptr=-1, next_leaf=-1):
         self.node_type = node_type      # 0 = interno, 1 = hoja
         self.is_root = is_root          # 1 = raíz, 0 = no raíz
         self.num_keys = num_keys        # cantidad de claves almacenadas
         self.parent_ptr = parent_ptr    # offset del padre
-        self.next_leaf = next_leaf  
+        self.next_leaf = next_leaf
 
         self.keys = []                  # lista de claves (enteros)
-        self.pointers = [] 
+        self.pointers = []
+
     def pack_header(self):
         return struct.pack(
             self.HEADER_FORMAT,
@@ -221,19 +186,60 @@ class BPlusTree:
             f.write(node.pack())
 
     def binary_intern(self,node,key):
-        i = bisect.bisect_right(node.keys, key)
-        return min(i, len(node.pointers) - 1)
+        # comparator-aware binary search (bisect_right equivalent)
+        l, r = 0, node.num_keys - 1
+        ans = node.num_keys
+        while l <= r:
+            m = (l + r) // 2
+            if self._cmp(node.keys[m], key) <= 0:
+                l = m + 1
+            else:
+                ans = m
+                r = m - 1
+        return min(ans, len(node.pointers) - 1)
     def binary_leaf(self,node, key):
         left, right = 0, node.num_keys - 1
         while left <= right:
             mid = (left + right) // 2
-            if node.keys[mid] == key:
+            cmpv = self._cmp(node.keys[mid], key)
+            if cmpv == 0:
                 return mid
-            elif key < node.keys[mid]:
+            elif cmpv > 0:
                 right = mid - 1
             else:
                 left = mid + 1
-        return -1  
+        return -1
+
+    def _looks_numeric(self, x):
+        return isinstance(x, (int, float)) or (isinstance(x, str) and re.fullmatch(r"-?\d+(?:\.\d+)?", x.strip()))
+
+    def _cmp(self, a, b):
+        # None ordering
+        if a is None and b is None:
+            return 0
+        if a is None:
+            return -1
+        if b is None:
+            return 1
+
+        # numeric native
+        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+            return (a > b) - (a < b)
+
+        # numeric-looking strings
+        try:
+            if self._looks_numeric(a) and self._looks_numeric(b):
+                fa = float(str(a))
+                fb = float(str(b))
+                return (fa > fb) - (fa < fb)
+        except Exception:
+            pass
+
+        sa = str(a)
+        sb = str(b)
+        if sa == sb:
+            return 0
+        return 1 if sa > sb else -1
     
     def search(self, key):
 
@@ -251,10 +257,109 @@ class BPlusTree:
         if idx != -1:
             return node.pointers[idx]
         return None
+    def find(self, key):
+        """Return a list of pointers (offsets) for all entries matching key (support duplicates)."""
+        root_ptr, _ = self.read_header()
+        node = self.read_node(root_ptr)
+
+        while node.node_type == 0:
+            i = self.binary_intern(node, key)
+            child_ptr = node.pointers[i]
+            node = self.read_node(child_ptr)
+
+        # node is leaf
+        # find any index with the key
+        i = self.binary_leaf(node, key)
+        if i == -1:
+            return []
+
+        # collect equals to the left and right
+        results = []
+        # scan left
+        j = i
+        while j >= 0 and self._cmp(node.keys[j], key) == 0:
+            results.append(node.pointers[j])
+            j -= 1
+        # scan right
+        j = i + 1
+        while j < node.num_keys and self._cmp(node.keys[j], key) == 0:
+            results.append(node.pointers[j])
+            j += 1
+
+        # it's possible duplicates continue in next leaf(s)
+        next_leaf_ptr = node.next_leaf
+        while next_leaf_ptr != -1:
+            next_node = self.read_node(next_leaf_ptr)
+            stop = False
+            for k, pk in zip(next_node.keys, next_node.pointers):
+                if self._cmp(k, key) == 0:
+                    results.append(pk)
+                else:
+                    # keys are sorted; if greater, we can stop scanning further leaves
+                    if self._cmp(k, key) > 0:
+                        stop = True
+                        break
+            if stop:
+                break
+            next_leaf_ptr = next_node.next_leaf
+
+        return results
+
+    def range_search(self, begin_key, end_key):
+        """Return list of pointers whose keys are between begin_key and end_key inclusive."""
+        if begin_key is None or end_key is None:
+            return []
+        if begin_key > end_key:
+            begin_key, end_key = end_key, begin_key
+
+        # find starting leaf and index: traverse to leaf using binary_intern but choosing lower_bound
+        root_ptr, _ = self.read_header()
+        node = self.read_node(root_ptr)
+        while node.node_type == 0:
+            # use comparator-aware binary search to find child pointer for begin_key
+            try:
+                i = self.binary_intern(node, begin_key)
+            except Exception:
+                # fallback to safe bounds
+                i = 0 if not node.pointers else min(len(node.pointers) - 1, 0)
+            child_ptr = node.pointers[i]
+            node = self.read_node(child_ptr)
+
+        # now at leaf, scan keys across leaf chain
+        results = []
+        cur = node
+        while True:
+            for k, p in zip(cur.keys, cur.pointers):
+                if self._cmp(k, begin_key) < 0:
+                    continue
+                if self._cmp(k, end_key) > 0:
+                    return results
+                results.append(p)
+            if cur.next_leaf == -1:
+                break
+            cur = self.read_node(cur.next_leaf)
+
+        return results
+
+    def add(self, key, pointer):
+        """Compatibility alias used by SchemaManager.insert (index.add)."""
+        try:
+            # try convert numeric-like strings to int for stable ordering
+            if isinstance(key, str) and key.isdigit():
+                key = int(key)
+        except Exception:
+            pass
+        return self.insert(key, pointer)
     def insert(self, key, pointer):
         root_ptr, _ = self.read_header()
 
         # Llamada recursiva al método interno
+        # normalize key if numeric-like string
+        try:
+            if isinstance(key, str) and re.fullmatch(r"\d+", key):
+                key = int(key)
+        except Exception:
+            pass
         result = self.insert_recursive(key, pointer, root_ptr)
 
         # Si hubo split que llegó hasta la raíz
@@ -279,13 +384,28 @@ class BPlusTree:
 
     # VERIFICAR KEY TIPO INT
     def insert_in_leaf(self, node: BPlusNode, key: int, pointer: int):
-        i = bisect.bisect_left(node.keys, key)
+        # find leftmost index where node.keys[i] >= key using comparator
+        left, right = 0, node.num_keys
+        while left < right:
+            mid = (left + right) // 2
+            if self._cmp(node.keys[mid], key) < 0:
+                left = mid + 1
+            else:
+                right = mid
+        i = left
         node.keys.insert(i, key)
         node.pointers.insert(i, pointer)
         node.num_keys += 1
     def insert_in_internal(self, node: BPlusNode, key: int, pointer: int):
-
-        i = bisect.bisect_left(node.keys, key)
+        # find leftmost index where node.keys[i] >= key
+        left, right = 0, node.num_keys
+        while left < right:
+            mid = (left + right) // 2
+            if self._cmp(node.keys[mid], key) < 0:
+                left = mid + 1
+            else:
+                right = mid
+        i = left
         node.keys.insert(i, key)
         node.pointers.insert(i + 1, pointer)
         node.num_keys += 1
@@ -662,168 +782,4 @@ class BPlusTree:
         for lvl in sorted(levels.keys()):
             keys_str = " | ".join(str(k) for k in levels[lvl])
             print(f"Nivel {lvl}: {keys_str}")
-        print()
-
-
-            
-class DataFile:
-    def __init__(self, filename):
-        self.filename = filename
-        # Crear archivo si no existe
-        if not os.path.exists(filename):
-            open(filename, 'wb').close()
-    
-    def insert_record(self, record):
-        with open(self.filename, 'ab') as f:
-            offset = f.tell()
-            data = record.pack()
-            f.write(data)
-        return offset
-    def read_record(self, offset, size):
-        """
-        Lee un registro desde el offset dado
-        """
-        with open(self.filename, 'rb') as f:
-            f.seek(offset)
-            data = f.read(size)
-            return Record.unpack(data)  # convertir bytes a Record
-
-    def update_record(self, offset, record):
-        """
-        Sobrescribe un registro existente
-        """
-        with open(self.filename, 'r+b') as f:
-            f.seek(offset)
-            f.write(record.pack())
-
-class IndexedFile:
-    def __init__(self, data_filename, index_filename):
-        self.data_filename = data_filename
-        self.index_filename = index_filename
-
-    def insert(self, record):
-        datafile = DataFile(self.data_filename)
-        bptree = BPlusTree(self.index_filename)
-        
-        # 1. Insertar en archivo de datos y obtener offset
-        pointer = datafile.insert_record(record)
-        
-        # 2. Insertar clave y puntero en B+ tree
-        bptree.insert(record.Employee_ID, pointer)
-    
-    def search(self, key):
-        bptree = BPlusTree(self.index_filename)
-        datafile = DataFile(self.data_filename)
-        
-        # Buscar offset en B+ tree
-        pointer = bptree.search(key)
-        if pointer is None:
-            return None
-        
-        # Leer registro desde DataFile
-        return datafile.read_record(pointer, Record.RECORD_SIZE)
-    
-    def delete(self, key):
-        bptree = BPlusTree(self.index_filename)
-        datafile = DataFile(self.data_filename)
-        
-        # Buscar clave en B+ tree
-        pointer = bptree.search(key)
-        if pointer is None:
-            return False
-        
-        # Eliminar clave del B+ tree
-        bptree.delete(key)
-        
-        # Opcional: marcar espacio como libre en DataFile
-        return True
-    
-
-
-
-def main():
-    # Archivos de prueba
-    data_filename = 'employees.dat'
-    index_filename = 'employees.idx'
-    csv_filename = 'employee.csv' # The name of your CSV file
-    # Crear IndexedFile
-    indexed_file = IndexedFile(data_filename, index_filename)
-
-# Create an instance of the IndexedFile
-    indexed_file = IndexedFile(data_filename, index_filename)
-    LIMITE_DE_REGISTROS = 30000
-    # Open and read the CSV file
-    try:
-        with open(csv_filename, mode='r', encoding='utf-8') as csvfile:
-            reader = csv.reader(csvfile, delimiter=';')
-            next(reader)  # Omitir la fila del encabezado
-
-            # --- CAMBIO 2: Inicializa un contador ---
-            registros_insertados = 0
-
-            # Insertar registros secuencialmente desde el CSV
-            for row in reader:
-                # --- CAMBIO 3: Revisa si ya se alcanzó el límite ---
-                if registros_insertados >= LIMITE_DE_REGISTROS:
-                    print(f"\nSe alcanzó el límite de {LIMITE_DE_REGISTROS} registros. Deteniendo la inserción.")
-                    break # Detiene el bucle
-
-                # Crear un objeto Record con los datos de la fila
-                # Asegúrate de que los tipos de datos sean correctos (int, float, etc.)
-                record = Record(
-                    Employee_ID=int(row[0]),
-                    Employee_Name=row[1],
-                    Age=int(row[2]),
-                    Country=row[3],
-                    Department=row[4],
-                    Position=row[5],
-                    Salary=float(row[6]),
-                    Joining_Date=row[7]
-                )
-                
-                # Insertar el registro en el sistema de archivos indexado
-                indexed_file.insert(record)
-                print(f"Insertado: {record.Employee_ID} - {record.Employee_Name}")
-
-                # --- CAMBIO 4: Incrementa el contador ---
-                registros_insertados += 1
-
-    except FileNotFoundError:
-        print(f"Error: The file '{csv_filename}' was not found.")
-        return
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        return
-
-    # ¡AGREGAR AQUÍ!
-    # AGREGAR AQUÍ - Visualizar el árbol
-    print("\n" + "="*50)
-    print("VISUALIZACIÓN DEL ÁRBOL DESPUÉS DE INSERCIONES")
-    print("="*50)
-    bptree = BPlusTree(index_filename)
-    bptree.print_simple()
-    
-    print("\n--- Buscar registros ---")
-    # Buscar algunos registros
-    for key in [22004,26193, 6191]:  # 5 no existe
-        result = indexed_file.search(key)
-        if result:
-            print(f"Encontrado: {result.Employee_ID} - {result.Employee_Name}")
-        else:
-            print(f"No se encontró clave {key}")
-
-    print("\n--- Eliminar registros ---")
-    # Eliminar un registro
-    key_to_delete = 6191
-    deleted = indexed_file.delete(key_to_delete)
-    print(f"Clave {key_to_delete} eliminada: {deleted}")
-
-    # Buscar después de eliminar
-    result = indexed_file.search(key_to_delete)
-    if result:
-        print(f"Encontrado después de eliminar: {result.Employee_ID} - {result.Employee_Name}")
-    else:
-        print(f"No se encontró clave {key_to_delete} después de eliminar")
-
-if __name__ == "__main__":
-    main()
+    print()

@@ -141,7 +141,7 @@ export function IndexExplorer({ defaultTable }: { defaultTable?: string }) {
     try {
       const payload: any = { index_type: indexType, table_name: tableName }
       // for spatial indexes allow explicit columns list
-      if (indexType === "rtree" || indexType === "kdtree") {
+  if (indexType === "rtree") {
         const cols = [columnName].filter(Boolean)
         if (secondColumn) cols.push(secondColumn)
         if (thirdColumn) cols.push(thirdColumn)
@@ -235,7 +235,7 @@ export function IndexExplorer({ defaultTable }: { defaultTable?: string }) {
           list="columns-list" // Habilitar lista de autocompletado
         />
         {/* Secondary/tertiary selectors for spatial indexes */}
-        {(selectedIndex === "rtree" || selectedIndex === "kdtree") && (
+  {(selectedIndex === "rtree") && (
           <>
             <select value={secondColumn} onChange={(e) => setSecondColumn(e.target.value)} className="max-w-xs p-2 rounded border">
               <option value="">-- secondary column (e.g. y or lon) --</option>

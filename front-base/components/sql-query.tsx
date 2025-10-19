@@ -23,6 +23,8 @@ export function SQLQuery() {
   const [resultsWithoutIndex, setResultsWithoutIndex] = useState<any[] | null>(null)
   const [executionTimeWithIndex, setExecutionTimeWithIndex] = useState<number | null>(null)
   const [executionTimeWithoutIndex, setExecutionTimeWithoutIndex] = useState<number | null>(null)
+  const [executedWith, setExecutedWith] = useState<boolean | null>(null)
+  const [executedWithout, setExecutedWithout] = useState<boolean | null>(null)
   const [usedIndexTypeWith, setUsedIndexTypeWith] = useState<string | null>(null)
   const [usedIndexTypeWithout, setUsedIndexTypeWithout] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -55,6 +57,8 @@ const handleExecuteQueryWithIndex = async () => {
       console.debug("[SQLQuery] Response with index:", data)
       setResultsWithIndex(data.result);
       setUsedIndexTypeWith(data.used_index_type ? String(data.used_index_type) : null)
+      // server may communicate executed/dry_run; if absent, assume executed on success
+      setExecutedWith(typeof data.executed === 'boolean' ? data.executed : true)
       toast.success("Query executed with index successfully!", {
         description: `Returned ${Array.isArray(data.result) ? data.result.length : 0} rows in ${(endTime - startTime).toFixed(2)}ms`,
       });
@@ -88,6 +92,7 @@ const handleExecuteQueryWithoutIndex = async () => {
       console.debug("[SQLQuery] Response without index:", data)
       setResultsWithoutIndex(data.result);
       setUsedIndexTypeWithout(data.used_index_type ? String(data.used_index_type) : null)
+      setExecutedWithout(typeof data.executed === 'boolean' ? data.executed : true)
       toast.success("Query executed without index successfully!", {
         description: `Returned ${Array.isArray(data.result) ? data.result.length : 0} rows in ${(endTime - startTime).toFixed(2)}ms`,
       });
@@ -135,11 +140,20 @@ const handleExecuteQueryWithoutIndex = async () => {
         const dataIdx = await resIdx.json()
         if (!dataIdx.ok) throw new Error(dataIdx.error || "Query with index failed")
 
-        const timeWithout = Number(dataNoIdx.execution_time) * 1000
-        const timeWith = Number(dataIdx.execution_time) * 1000
+  // Use server-side executed/dry_run flags to decide which timings to display.
+  const timeWithout = Number(dataNoIdx.execution_time) * 1000
+  const timeWith = Number(dataIdx.execution_time) * 1000
 
-        setExecutionTimeWithoutIndex(timeWithout)
-        setExecutionTimeWithIndex(timeWith)
+  const execNo = typeof dataNoIdx.executed === 'boolean' ? dataNoIdx.executed : true
+  const execYes = typeof dataIdx.executed === 'boolean' ? dataIdx.executed : true
+
+  setExecutedWithout(execNo)
+  setExecutedWith(execYes)
+
+  // Only set times for requests that were actually executed (exec flag true). This
+  // avoids showing a "fake" time from a dry-run or a non-applicable run.
+  setExecutionTimeWithoutIndex(execNo ? timeWithout : null)
+  setExecutionTimeWithIndex(execYes ? timeWith : null)
         setResultsWithoutIndex(Array.isArray(dataNoIdx.result) ? dataNoIdx.result : [])
         setResultsWithIndex(Array.isArray(dataIdx.result) ? dataIdx.result : [])
 
@@ -180,8 +194,9 @@ const handleExecuteQueryWithoutIndex = async () => {
         const data = await res.json()
         if (!data.ok) throw new Error(data.error || "Query failed")
 
-        const timeMs = Number(data.execution_time || 0) * 1000
-        setExecutionTimeWithoutIndex(timeMs)
+  const timeMs = Number(data.execution_time || 0) * 1000
+  setExecutionTimeWithoutIndex(timeMs)
+  setExecutedWithout(true)
         setResultsWithoutIndex(Array.isArray(data.result) ? data.result : [])
         // show feedback
         toast.success("Operation executed", { description: data.message || `Affected: ${Array.isArray(data.result) ? data.result.length : 0}` })
@@ -230,66 +245,61 @@ const handleExecuteQueryWithoutIndex = async () => {
           setAvailableIndexMeta(meta)
         }
       } catch (e) {
-        // ignore
+        console.warn("loadIndexes failed", e)
       }
     }
     loadIndexes()
   }, [])
 
+  // Render
   return (
-    <div className="p-8 space-y-8">
-      {/* Header */}
-      <div className="animate-fade-in">
-        <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-foreground via-foreground to-foreground/70 bg-clip-text text-transparent">
-          SQL Query Editor
-        </h1>
-        <p className="text-muted-foreground mt-2">Execute SQL-like queries on your database</p>
-      </div>
+    <div className="space-y-4">
 
-      {/* Query Editor */}
-      <Card className="glass-card border-white/10 animate-scale-in hover:shadow-xl hover:shadow-primary/10 transition-all duration-300">
+      {/* SQL Input Card */}
+      <Card className="glass-card border-white/10 animate-fade-in hover:shadow-xl hover:shadow-primary/5 transition-all duration-300">
         <CardHeader>
-          <CardTitle>Query Editor</CardTitle>
-          <CardDescription>Write and execute your SQL queries</CardDescription>
+          <CardTitle>SQL</CardTitle>
+          <CardDescription>Write a SQL query to run against the local DB</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <Textarea
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Enter your SQL query..."
-            className="font-mono min-h-[200px] bg-black/40 border-white/10 focus:border-primary/50 focus:shadow-lg focus:shadow-primary/20 transition-all duration-300"
-          />
-          <div className="flex items-center justify-between">
-            <div className="flex gap-2">
-                <select value={indexHint} onChange={(e) => setIndexHint(e.target.value)} className="bg-black/30 text-sm rounded p-2 border border-white/10">
-                  {availableIndexOptions.map((o) => (
-                    <option key={o} value={o}>{o === 'auto' ? 'Auto (choose best)' : (o === 'none' ? 'None (force no index)' : o)}</option>
-                  ))}
-                </select>
-                {/* Show spatial columns info when selecting a spatial index option */}
-                {indexHint !== 'auto' && indexHint !== 'none' && availableIndexMeta[indexHint] && (
-                  <div className="text-sm text-muted-foreground ml-3">
-                    {availableIndexMeta[indexHint].type === 'rtree' && availableIndexMeta[indexHint].columns ? (
-                      <span>Usa coordenadas: {availableIndexMeta[indexHint].columns.join(', ')} para búsquedas espaciales</span>
-                    ) : null}
-                  </div>
-                )}
-              <Button
-                onClick={handleExecuteBoth}
-                disabled={loading}
-                className="gap-2 hover:scale-105 hover:shadow-lg hover:shadow-primary/30 transition-all duration-300 bg-gradient-to-r from-primary to-primary/90"
-              >
-                <Play className="h-4 w-4" />
-                {loading ? "Running..." : "Execute (With & Without Index)"}
-              </Button>
-              {/* Compare controls removed per user request */}
+        <CardContent>
+          <div className="space-y-3">
+            <Textarea value={query} onChange={(e: any) => setQuery(e.target.value)} className="min-h-[120px] text-sm" />
+
+            <div className="flex items-center gap-3">
+              <select value={indexHint} onChange={(e) => setIndexHint(e.target.value)} className="bg-black/30 text-sm rounded p-2 border border-white/10">
+                {availableIndexOptions.map((o) => (
+                  <option key={o} value={o}>{o === 'auto' ? 'Auto (choose best)' : (o === 'none' ? 'None (force no index)' : o)}</option>
+                ))}
+              </select>
+
+              <div className="flex gap-2 ml-auto">
+                <Button onClick={async () => {
+                  // If user selected 'auto', run both; otherwise run single request following hint
+                  if (indexHint === 'auto') return handleExecuteBoth()
+                  if (indexHint === 'none') return handleExecuteQueryWithoutIndex()
+                  return handleExecuteQueryWithIndex()
+                }} disabled={loading} className="gap-2">
+                  <Play className="h-4 w-4" />
+                  {loading ? "Running..." : "Execute"}
+                </Button>
+
+                <Button onClick={handleExecuteBoth} disabled={loading} className="gap-2">
+                  <Play className="h-4 w-4" />
+                  Execute (With & Without Index)
+                </Button>
+              </div>
             </div>
+
+            {/* Timing display: show real executed times with a green clock */}
             {(executionTimeWithIndex || executionTimeWithoutIndex) && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground animate-fade-in">
-                <Clock className="h-4 w-4" />
-                <span className="font-mono text-secondary font-semibold">
-                  {executionTimeWithIndex && `With Index: ${executionTimeWithIndex.toFixed(2)}ms`}
-                  {executionTimeWithoutIndex && ` | Without Index: ${executionTimeWithoutIndex.toFixed(2)}ms`}
+              <div className="flex items-center gap-2 text-sm text-emerald-400 mt-3 animate-fade-in">
+                <Clock className="h-4 w-4 text-emerald-400" />
+                <span className="font-mono font-semibold">
+                  {executionTimeWithIndex && executedWith ? `With Index: ${executionTimeWithIndex.toFixed(2)}ms` : null}
+                  {executionTimeWithIndex && executedWith && executionTimeWithoutIndex && executedWithout ? ` | ` : null}
+                  {executionTimeWithoutIndex && executedWithout ? `Without Index: ${executionTimeWithoutIndex.toFixed(2)}ms` : null}
+                  {!executedWith && !executedWithout && (executionTimeWithIndex || executionTimeWithoutIndex) ?
+                    (executionTimeWithIndex ? `With Index: ${executionTimeWithIndex.toFixed(2)}ms` : `Without Index: ${executionTimeWithoutIndex?.toFixed(2)}ms`) : null}
                 </span>
               </div>
             )}

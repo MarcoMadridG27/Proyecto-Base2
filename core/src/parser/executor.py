@@ -13,7 +13,7 @@ class Executor:
         self.schema_manager = SchemaManager(data_dir)
         self.parser = SQLParser()
 
-    def execute(self, query: str, use_index: bool = True, index_hint: str = None):
+    def execute(self, query: str, use_index: bool = True, index_hint: str = None, dry_run: bool = False):
         # Parseamos la consulta SQL
         ast = self.parser.parse(query)
         op = ast["operation"]
@@ -26,10 +26,47 @@ class Executor:
 
         elif op == "insert":
             # Insertar datos en la tabla
-            return self.schema_manager.insert(ast["table"], ast["values"])
+            # If parser returned explicit columns, convert values to a mapping
+            vals = ast.get("values")
+            cols = ast.get("columns")
+            if cols and isinstance(cols, list):
+                # strip trailing commas from tokens and remove quotes
+                cleaned = [v.strip().strip("'\"") for v in vals]
+                def normalize_col(name):
+                    return name.strip().replace(' ', '_').replace('/', '_').replace('-', '_').lower()
+                mapping = {normalize_col(c): (cleaned[i] if i < len(cleaned) else None) for i, c in enumerate(cols)}
+                if dry_run:
+                    # simulate packing/validation but do not write to disk
+                    try:
+                        # attempt to pack to detect errors
+                        schema = self.schema_manager.tables[ast["table"]]["schema"]
+                        schema.pack(mapping)
+                    except Exception:
+                        # ignore packing errors in dry run, but return info
+                        pass
+                    return {"result": None, "executed": False, "dry_run": True}
+                return self.schema_manager.insert(ast["table"], mapping)
+            else:
+                if dry_run:
+                    try:
+                        # try to validate values against schema if possible
+                        schema = self.schema_manager.tables[ast["table"]]["schema"]
+                        # values may be list: convert to dict for pack
+                        rec = {}
+                        for i, col in enumerate(schema.columns):
+                            rec[col['name']] = vals[i] if i < len(vals) else None
+                        schema.pack(rec)
+                    except Exception:
+                        pass
+                    return {"result": None, "executed": False, "dry_run": True}
+                return self.schema_manager.insert(ast["table"], vals)
 
         elif op == "delete":
             # Eliminar datos de la tabla
+            if dry_run:
+                # return count of matched rows without deleting
+                count = self.schema_manager.count_matches(ast["table"], ast["condition"])
+                return {"result": None, "dry_count": count}
             return self.schema_manager.delete(ast["table"], ast["condition"])
 
         elif op == "select":
@@ -165,54 +202,91 @@ class Executor:
                                 continue
                         if chosen:
                             final_hint = chosen
-                rows = self.schema_manager.select(
+                # Ask SchemaManager to return metadata about whether the index was actually used.
+                meta = self.schema_manager.select(
                     table_name,
                     ast["columns"],
                     ast.get("condition"),
                     index=ast.get("index"),
                     limit=ast.get("limit"),
                     index_hint=final_hint,
+                    return_metadata=True,
                 )
-                # Determine which index hint actually we attempted to use
+
+                # Default fallbacks
+                rows = None
+                actually_used = False
                 used_col = final_hint
-                used = bool(used_col)
-                warning = None if used else f"No index used for table '{table_name}'"
-
-                # Determine index type string from the index object (if present)
                 idx_type = None
-                try:
-                    idx_obj = None
-                    if tbl and isinstance(tbl, dict):
-                        idx_obj = tbl.get("indexes", {}).get(used_col)
-                    if idx_obj is not None:
-                        cname = idx_obj.__class__.__name__.lower()
-                        if "bplus" in cname or "bplustree" in cname or "btree" in cname:
-                            idx_type = "btree"
-                        elif "isam" in cname:
-                            idx_type = "isam"
-                        elif "extend" in cname or "hash" in cname:
-                            idx_type = "hash"
-                        elif "rtree" in cname:
-                            idx_type = "rtree"
-                        elif "sequential" in cname or "sidx" in cname:
-                            idx_type = "sequential"
-                        else:
-                            idx_type = cname
-                except Exception:
-                    idx_type = None
-
-                # Determine used index columns (for RTree might be multi-column)
                 used_index_columns = None
-                try:
-                    if idx_obj is not None and hasattr(idx_obj, "_columns"):
-                        used_index_columns = list(getattr(idx_obj, "_columns"))
-                except Exception:
-                    used_index_columns = None
+                warning = None
 
-                # Print the detected column and only the index type (or 'none')
+                # If SchemaManager returned the metadata dict, use it to determine actual usage
+                if isinstance(meta, dict) and "rows" in meta:
+                    rows = meta.get("rows")
+                    actually_used = bool(meta.get("actually_used", False))
+                    # Prefer the used_index reported by schema manager if present
+                    used_col = meta.get("used_index") if meta.get("used_index") else final_hint
+                    used_index_obj = None
+                    try:
+                        used_index_obj = tbl.get("indexes", {}).get(used_col) if tbl else None
+                    except Exception:
+                        used_index_obj = None
+
+                    # determine index type string from the actual index object
+                    try:
+                        if used_index_obj is not None:
+                            cname = used_index_obj.__class__.__name__.lower()
+                            if "bplus" in cname or "bplustree" in cname or "btree" in cname:
+                                idx_type = "btree"
+                            elif "isam" in cname:
+                                idx_type = "isam"
+                            elif "extend" in cname or "hash" in cname:
+                                idx_type = "hash"
+                            elif "rtree" in cname:
+                                idx_type = "rtree"
+                            elif "sequential" in cname or "sidx" in cname:
+                                idx_type = "sequential"
+                            else:
+                                idx_type = cname
+                    except Exception:
+                        idx_type = None
+
+                    try:
+                        if used_index_obj is not None and hasattr(used_index_obj, "_columns"):
+                            used_index_columns = list(getattr(used_index_obj, "_columns"))
+                    except Exception:
+                        used_index_columns = None
+
+                    if not actually_used:
+                        warning = f"Requested index hint '{final_hint}' was not applicable for table '{table_name}'"
+                else:
+                    # Legacy behavior: SchemaManager returned rows only. Treat hint->used as best-effort.
+                    rows = meta
+                    actually_used = bool(final_hint)
+                    try:
+                        used_index_obj = tbl.get("indexes", {}).get(final_hint) if tbl else None
+                        if used_index_obj is not None:
+                            cname = used_index_obj.__class__.__name__.lower()
+                            if "bplus" in cname or "bplustree" in cname or "btree" in cname:
+                                idx_type = "btree"
+                            elif "isam" in cname:
+                                idx_type = "isam"
+                            elif "extend" in cname or "hash" in cname:
+                                idx_type = "hash"
+                            elif "rtree" in cname:
+                                idx_type = "rtree"
+                            elif "sequential" in cname or "sidx" in cname:
+                                idx_type = "sequential"
+                            else:
+                                idx_type = cname
+                    except Exception:
+                        idx_type = None
+
                 detected_col = used_col if used_col else 'none'
-                print(f"[DEBUG] Executor.execute: detected_column={detected_col} using_index_type={idx_type if idx_type else 'none'}")
-                return {"result": rows, "used_index": (used_col if used_col else False), "used_index_type": (idx_type if idx_type else False), "used_index_columns": (used_index_columns if used_index_columns else False), "index_warning": warning}
+                print(f"[DEBUG] Executor.execute: detected_column={detected_col} actually_used={actually_used} using_index_type={idx_type if idx_type else 'none'}")
+
+                return {"result": rows, "used_index": (used_col if actually_used else False), "used_index_type": (idx_type if actually_used and idx_type else False), "used_index_columns": (used_index_columns if actually_used and used_index_columns else False), "index_warning": warning}
             elif use_index and not has_any_index:
                 # No hay índices disponibles, ejecutar sin índice pero con advertencia
                 rows = self.schema_manager.select_without_index(

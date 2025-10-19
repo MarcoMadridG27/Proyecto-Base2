@@ -1,260 +1,217 @@
-from rtree import index
+# src/dbms/rtree.py
 import os
-import threading
-import time
+import sqlite3
+import math
+from typing import Iterable, List, Sequence, Tuple, Optional
+
+try:
+    from rtree import index as rtree_index  # type: ignore
+    _HAVE_RTREE = True
+except Exception:
+    rtree_index = None
+    _HAVE_RTREE = False
+
+# KDTree support removed; only libspatialindex (rtree) or sqlite scan fallbacks remain.
+KDTree = None
+_HAVE_KDTREE = False
 
 
-class RTreeIndex:
-
-    def __init__(self, storage_path, index_name, dimension: int = 2):
-
-        if not os.path.exists(storage_path):
-            os.makedirs(storage_path)
-
-        self.index_path = os.path.join(storage_path, index_name)
-
-        # Propiedades para la creación del índice
-        p = index.Property()
-        # Allow variable dimension (2D/3D)
-        self.dimension = max(2, int(dimension))  # default to at least 2
-        p.dimension = self.dimension
-        p.dat_extension = 'data'
-        p.idx_extension = 'index'
-
-        # Carga el índice si ya existe, de lo contrario lo crea
-        # Use try/except to surface errors early
-        self.idx = index.Index(self.index_path, properties=p)
-
-    def add(self, item_id, coordinates):
-        # Build bounding box for variable dimension: (min1,...,minD, max1,...,maxD)
-        # For a point, mins = maxs = coordinates
-        try:
-            coords = [float(c) for c in coordinates]
-        except Exception:
-            # fallback to zeros
-            coords = [0.0] * self.dimension
-
-        # ensure length
-        if len(coords) < self.dimension:
-            coords = coords + [0.0] * (self.dimension - len(coords))
-
-        mins = coords[:self.dimension]
-        maxs = coords[:self.dimension]
-        bounding_box = tuple(mins + maxs)
-        # perform insertion
-        self.idx.insert(int(item_id), bounding_box)
-
-    def range_search(self, point, radius):
-        # Crea un 'bounding box' (caja delimitadora) para la consulta
-        try:
-            p = [float(c) for c in point]
-        except Exception:
-            p = [0.0] * self.dimension
-
-        if len(p) < self.dimension:
-            p = p + [0.0] * (self.dimension - len(p))
-
-        mins = [p[i] - radius for i in range(self.dimension)]
-        maxs = [p[i] + radius for i in range(self.dimension)]
-        search_box = tuple(mins + maxs)
-        return list(self.idx.intersection(search_box))
-
-    def knn_search(self, point, k):
-        # La librería rtree devuelve un generador, lo convertimos a lista
-        try:
-            return list(self.idx.nearest(coordinates=point, num_results=k))
-        except TypeError:
-            # fallback to positional args for older/newer rtree versions
-            return list(self.idx.nearest(point, k))
-
-    def close(self):
-        try:
-            self.idx.close()
-        except Exception:
-            pass
-
-    def count(self):
-        try:
-            return self.idx.count(self.idx.bounds)
-        except Exception:
-            return 0
-
-
-# Compatibility wrapper expected by SchemaManager
 class RTree:
-    """
-    Robust wrapper that keeps a single inner index instance, protects access with a lock,
-    and attempts a reopen+retry on failures. Also provides bulk_add for safer bulk population.
-    """
-    def __init__(self, table_name: str, column: str, data_dir: str = "data", dimension: int = 2):
-        # data_dir is already the canonical index directory (data/idx_rtree/<table>/<column>)
-        self.storage = data_dir
-        self.idx_name = f"{column}"
-        self.dimension = max(2, int(dimension))
-        self._lock = threading.RLock()
-        self._inner = None
-        self._error_count = 0
-        self._max_errors = 3
-        self._disabled = False
-        # attempt initial open
-        self._open_index()
+    def __init__(self, table: str, column: str, data_dir: Optional[str] = None, dimension: Optional[int] = None, idx_name: Optional[str] = None):
+        if data_dir:
+            base = data_dir
+        else:
+            base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "idx_rtree"))
+        os.makedirs(base, exist_ok=True)
 
-    def _open_index(self):
-        try:
-            self._inner = RTreeIndex(self.storage, self.idx_name, dimension=self.dimension)
-            # reset error state on successful open
-            self._error_count = 0
-            self._disabled = False
-        except Exception as e:
-            print(f"[WARN] RTree: failed to open index {self.idx_name} at {self.storage}: {e}")
-            self._inner = None
+        self.dim = int(dimension) if dimension else self._parse_dimension(column)
+        safe_name = f"{table}_{idx_name or column}_d{self.dim}"
+        self.basepath = os.path.join(base, safe_name)
+        self.sqlite_path = self.basepath + ".sqlite"
 
-    def _ensure_inner(self):
-        if self._inner is None:
-            self._open_index()
-
-    def add(self, key, offset):
-        coords = None
-        try:
-            if isinstance(key, (list, tuple)) and len(key) >= 2:
-                coords = [float(key[i]) for i in range(min(len(key), self.dimension))]
-            elif isinstance(key, str) and "," in key:
-                parts = [p.strip() for p in key.split(',') if p.strip()]
-                coords = [float(parts[i]) for i in range(min(len(parts), self.dimension))]
-            elif isinstance(key, dict):
-                # try common keys
-                if "lat" in key and "lon" in key:
-                    coords = [float(key["lat"]), float(key["lon"])]
-                elif "y" in key and "x" in key:
-                    coords = [float(key["y"]), float(key["x"])]
-        except Exception as e:
-            print(f"[WARN] RTree: failed to parse coordinates from key={key}: {e}")
-
-        if coords is None:
-            # fallback location
-            coords = [0.0] * self.dimension
-            print(f"[WARN] RTree: non-spatial key provided for R-Tree index, storing at (0,...): {key}")
-
-        with self._lock:
-            self._ensure_inner()
-            if self._inner is None:
-                print("[ERROR] RTree.add failed: index not available")
-                return
-
-            # normalize coords length
-            if len(coords) < self.dimension:
-                coords = coords + [0.0] * (self.dimension - len(coords))
-
+        self.idx = None
+        if _HAVE_RTREE:
+            p = rtree_index.Property()
+            p.dimension = self.dim
             try:
-                self._inner.add(int(offset), coords)
-            except Exception as e:
-                print(f"[ERROR] RTree.add failed: {e}")
-                # increment error counter and possibly disable index
-                try:
-                    self._error_count += 1
-                    if self._error_count >= self._max_errors:
-                        print(f"[ERROR] RTree: disabling index {self.idx_name} after {self._error_count} errors")
-                        try:
-                            self._inner.close()
-                        except Exception:
-                            pass
-                        self._inner = None
-                        self._disabled = True
-                except Exception:
-                    pass
-                # try to recover: close, reopen, retry once
-                try:
+                self.idx = self._open_or_recreate_index(p)
+            except Exception:
+                self.idx = self._open_or_recreate_index(p)
+
+        self.db = sqlite3.connect(self.sqlite_path)
+        self._init_sqlite()
+
+        # no KDTree initialization (removed)
+        self._kd = None
+
+    def _open_or_recreate_index(self, props):
+        try:
+            return rtree_index.Index(self.basepath, properties=props)
+        except Exception:
+            for ext in (".data", ".index", ".dat", ".idx"):
+                f = self.basepath + ext
+                if os.path.exists(f):
                     try:
-                        self._inner.close()
+                        os.remove(f)
                     except Exception:
                         pass
-                    time.sleep(0.01)
-                    self._open_index()
-                    if self._inner is not None:
-                        self._inner.add(int(offset), coords)
-                except Exception as e2:
-                    print(f"[ERROR] RTree.add failed on retry: {e2}")
+            return rtree_index.Index(self.basepath, properties=props)
 
-    def bulk_add(self, iterable):
-        """Accepts iterable of (key, offset) and inserts in small batches, reopening index if errors occur."""
-        with self._lock:
-            self._ensure_inner()
-            if self._inner is None:
-                print("[WARN] RTree.bulk_add: index not available, skipping")
-                return
-            for key, offset in iterable:
-                try:
-                    self.add(key, offset)
-                except Exception:
-                    # swallow per-item errors but continue
-                    continue
+    @staticmethod
+    def _parse_dimension(column_type: str) -> int:
+        n = 0
+        for ch in column_type:
+            if ch.isdigit():
+                n = n * 10 + int(ch)
+            else:
+                break
+        return n if n > 0 else 2
 
-    def range_search(self, point, radius):
-        with self._lock:
-            # if the index has been disabled due to repeated native errors, skip using it
-            if getattr(self, "_disabled", False):
-                print(f"[WARN] RTree.range_search skipped because index {self.idx_name} is disabled")
-                return []
-            self._ensure_inner()
-            if self._inner is None:
-                return []
+    def _init_sqlite(self):
+        cur = self.db.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS items (
+                id   INTEGER PRIMARY KEY,
+                dims INTEGER NOT NULL,
+                bbox TEXT NOT NULL
+            )
+        """)
+        self.db.commit()
+
+    @staticmethod
+    def _serialize_bbox(bbox: Iterable[float]) -> str:
+        return ",".join(str(float(x)) for x in bbox)
+
+    @staticmethod
+    def _deserialize_bbox(s: str) -> Tuple[float, ...]:
+        return tuple(float(x) for x in s.split(",")) if s else tuple()
+
+    def _bbox_from_point(self, point: Sequence[float]) -> Tuple[float, ...]:
+        p = [float(x) for x in point]
+        return tuple(p + p)
+
+    def insert(self, point: Sequence[float], row_off: int) -> None:
+        if len(point) != self.dim:
+            raise ValueError(f"Dimensión mismatcheada: {len(point)}D vs {self.dim}D")
+
+        bbox = self._bbox_from_point(point)
+        if self.idx is not None:
             try:
-                return self._inner.range_search(point, radius)
-            except Exception as e:
-                print(f"[ERROR] RTree.range_search failed: {e}")
-                # increment error counter and disable index if threshold reached
-                try:
-                    self._error_count += 1
-                    if self._error_count >= self._max_errors:
-                        print(f"[ERROR] RTree: disabling index {self.idx_name} after {self._error_count} range_search errors")
-                        try:
-                            self._inner.close()
-                        except Exception:
-                            pass
-                        self._inner = None
-                        self._disabled = True
-                        return []
-                except Exception:
-                    pass
-                # try reopen once and attempt again
-                try:
-                    try:
-                        self._inner.close()
-                    except Exception:
-                        pass
-                    self._open_index()
-                    if self._inner is None:
-                        return []
-                    return self._inner.range_search(point, radius)
-                except Exception as e2:
-                    print(f"[ERROR] RTree.range_search retry failed: {e2}")
-                    return []
+                self.idx.insert(int(row_off), bbox)
+            except Exception:
+                pass
 
-    def knn_search(self, point, k):
-        with self._lock:
-            self._ensure_inner()
-            if self._inner is None:
-                return []
+        cur = self.db.cursor()
+        cur.execute(
+            "INSERT OR REPLACE INTO items (id, dims, bbox) VALUES (?, ?, ?)",
+            (int(row_off), self.dim, self._serialize_bbox(bbox))
+        )
+        self.db.commit()
+
+    def range_search(self, point: Sequence[float], radius: float) -> List[int]:
+        if len(point) != self.dim:
+            raise ValueError(f"Dimensión mismatcheada: {len(point)}D vs {self.dim}D")
+
+        p = [float(x) for x in point]
+        r = float(radius)
+        mins = [p[i] - r for i in range(self.dim)]
+        maxs = [p[i] + r for i in range(self.dim)]
+        query_bbox = tuple(mins + maxs)
+
+        if self.idx is not None:
             try:
-                return self._inner.knn_search(point, k)
-            except Exception as e:
-                print(f"[ERROR] RTree.knn_search failed: {e}")
-                return []
+                return list(self.idx.intersection(query_bbox))
+            except Exception:
+                pass
+
+        # Fallback: linear scan in sqlite and distance filter
+        cur = self.db.cursor()
+        rows = cur.execute("SELECT id, bbox FROM items WHERE dims = ?", (self.dim,)).fetchall()
+        out: List[int] = []
+        for rid, bbox_s in rows:
+            bbox = self._deserialize_bbox(bbox_s)
+            pt = tuple(bbox[:self.dim])
+            inside = True
+            for i in range(self.dim):
+                if pt[i] < mins[i] or pt[i] > maxs[i]:
+                    inside = False
+                    break
+            if not inside:
+                continue
+            out.append(int(rid))
+        return out
+
+    def knn_search(self, point: Sequence[float], k: int) -> List[int]:
+        if len(point) != self.dim:
+            raise ValueError(f"Dimensión mismatcheada: {len(point)}D vs {self.dim}D")
+        if self.idx is not None:
+            try:
+                p = tuple(float(x) for x in point)
+                return list(self.idx.nearest(coordinates=p, num_results=max(1, int(k))))
+            except Exception:
+                pass
+
+        # no KDTree available; final fallback is brute-force distance sort
+
+        # final fallback: brute-force distance sort
+        cur = self.db.cursor()
+        rows = cur.execute("SELECT id, bbox FROM items WHERE dims = ?", (self.dim,)).fetchall()
+        pts = []
+        for rid, bbox_s in rows:
+            bbox = self._deserialize_bbox(bbox_s)
+            pt = tuple(bbox[:self.dim])
+            pts.append((int(rid), pt))
+        def dist(a, b):
+            return math.sqrt(sum((float(a[i]) - float(b[i])) ** 2 for i in range(self.dim)))
+        pts.sort(key=lambda it: dist(it[1], point))
+        return [rid for rid, _ in pts[:max(1, int(k))]]
+
+    def search(self, point: Sequence[float]) -> List[int]:
+        if len(point) != self.dim:
+            raise ValueError(f"Dimensión mismatcheada: {len(point)}D vs {self.dim}D")
+        bbox = self._bbox_from_point(point)
+        if self.idx is not None:
+            try:
+                candidates = list(self.idx.intersection(bbox))
+            except Exception:
+                candidates = []
+        else:
+            cur = self.db.cursor()
+            rows = cur.execute("SELECT id, bbox FROM items WHERE dims = ?", (self.dim,)).fetchall()
+            candidates = [int(rid) for rid, _ in rows]
+
+        if not candidates:
+            return []
+        want = self._serialize_bbox(bbox)
+        cur = self.db.cursor()
+        q = f"SELECT id FROM items WHERE id IN ({','.join('?'*len(candidates))}) AND bbox = ?"
+        rows = cur.execute(q, [*map(int, candidates), want]).fetchall()
+        return [int(r[0]) for r in rows]
+
+    def delete(self, row_off: int) -> List[int]:
+        cur = self.db.cursor()
+        row = cur.execute("SELECT bbox FROM items WHERE id = ?", (int(row_off),)).fetchone()
+        if not row:
+            return [-1]
+        bbox = self._deserialize_bbox(row[0])
+        if self.idx is not None:
+            try:
+                self.idx.delete(int(row_off), tuple(bbox))
+            except Exception:
+                pass
+        cur.execute("DELETE FROM items WHERE id = ?", (int(row_off),))
+        self.db.commit()
+        return [int(row_off)]
 
     def close(self):
-        with self._lock:
+        try:
+            if self.idx is not None:
+                try:
+                    self.idx.close()
+                except Exception:
+                    pass
+        finally:
             try:
-                if self._inner is not None:
-                    self._inner.close()
+                self.db.close()
             except Exception:
                 pass
-            self._inner = None
-
-    def count(self):
-        with self._lock:
-            try:
-                if self._inner is not None:
-                    return self._inner.count()
-            except Exception:
-                pass
-            return 0

@@ -5,13 +5,11 @@ import json
 import shutil
 from src.record import RecordSchema
 from src.dbms.file_manager import FileManager
-from src.dbms.sequential import SequentialFile
 from src.dbms.sequential_index import SequentialIndex
 from src.dbms.isam import ISAMMultinivel
 from src.dbms.extendible_hash import ExtendibleHash
 from src.dbms.bplustree import BPlusTree
 from src.dbms.rtree import RTree
-from src.dbms.kdtree import KDTree
 from src.dbms.file_manager import reset_disk_accesses, get_disk_accesses
 
 
@@ -109,13 +107,9 @@ class SchemaManager:
                         except Exception:
                             pass
                         indexes[col] = idx
+                    # kdtree support removed - default to extendible hash for unknown spatial types
                     elif itype == "kdtree":
-                        # kdtree uses a persistent pickle file inside index_dir
-                        dimension = 3 if "__" in col and len(col.split("__")) >= 3 else 2
-                        try:
-                            indexes[col] = KDTree(tname, col, data_dir=index_dir, dimension=dimension)
-                        except Exception:
-                            indexes[col] = KDTree(tname, col, data_dir=index_dir, dimension=dimension)
+                        indexes[col] = ExtendibleHash(tname, col, data_dir=index_dir)
                     else:
                         # unknown: try extendible hash as a safe default
                         indexes[col] = ExtendibleHash(tname, col, data_dir=index_dir)
@@ -158,133 +152,27 @@ class SchemaManager:
                 except Exception:
                     pass
         except Exception:
+            # best-effort close; ignore errors
             pass
 
-        # remove on-disk index directories across possible index types
-        for _t in ("sequential", "isam", "btree", "hash", "rtree"):
-            path = os.path.join(self.data_dir, f"idx_{_t}", table_name, column)
-            if os.path.exists(path):
-                try:
-                    if os.path.isfile(path):
-                        os.remove(path)
-                    else:
-                        # remove tree
-                        import shutil
-                        shutil.rmtree(path)
-                except Exception as e:
-                    print(f"[WARN] Failed to remove index path {path}: {e}")
+    def select(self, table_name, columns, condition=None, index=None, limit=None, index_hint=None, return_metadata: bool = False):
+        """Select rows from a table.
 
-        # Remove index object from memory and persist catalog
-        try:
-            del self.tables[table_name]["indexes"][column]
-        except Exception:
-            pass
-        self._save_catalog()
-
-    # ---------------------------
-    # Crear tabla
-    # ---------------------------
-    def create_table(self, table_name, columns, index_map=None):
-        schema = RecordSchema(columns)
-        filepath = os.path.join(self.data_dir, f"{table_name}.dat")
-        file_manager = FileManager(filepath, schema)
-
-        indexes = {}
-        if index_map:
-            for col, idx_type in index_map.items():
-                # uniform index directory: data/idx_{type}/{table}/{column}/...
-                index_dir = os.path.join(self.data_dir, f"idx_{idx_type}", table_name, col)
-                os.makedirs(index_dir, exist_ok=True)
-                if idx_type == "sequential":
-                    indexes[col] = SequentialIndex(table_name, col, data_dir=index_dir)
-                elif idx_type == "isam":
-                    indexes[col] = ISAMMultinivel(
-                        os.path.join(index_dir, "nivel_1.dat"),
-                        os.path.join(index_dir, "nivel_2.dat"),
-                        os.path.join(index_dir, "nivel_3.dat"),
-                        os.path.join(index_dir, "overflow.dat"),
-                    )
-                elif idx_type == "btree":
-                    idx_file = os.path.join(index_dir, "btree.idx")
-                    indexes[col] = BPlusTree(idx_file)
-                elif idx_type == "hash":
-                    indexes[col] = ExtendibleHash(table_name, col, data_dir=index_dir)
-                elif idx_type == "rtree":
-                    idx = RTree(table_name, col, data_dir=index_dir)
-                    try:
-                        idx._columns = [col]
-                    except Exception:
-                        pass
-                    indexes[col] = idx
-                else:
-                    indexes[col] = ExtendibleHash(table_name, col, data_dir=index_dir)
-
-        self.tables[table_name] = {
-            "schema": schema,
-            "file": file_manager,
-            "indexes": indexes,
-        }
-
-        self._save_catalog()
-        return f"Tabla {table_name} creada con {len(columns)} columnas"
-
-    # ---------------------------
-    # Insertar registro
-    # ---------------------------
-    def insert(self, table_name, values):
+        If return_metadata=True the function returns a dict:
+          { rows: [...], used_index: <col|False>, actually_used: bool, used_index_type: <str|None> }
+        Otherwise it returns the list of rows (legacy behavior).
+        """
         table = self.tables[table_name]
         schema, file_manager, indexes = table["schema"], table["file"], table["indexes"]
 
-        if isinstance(values, list):
-            record_dict = {}
-            for i, col_def in enumerate(schema.columns):
-                col_name = col_def["name"]
-                if i < len(values):
-                    val = values[i]
-                    if isinstance(val, str):
-                        val = val.strip().strip("'\"")
-                    record_dict[col_name] = val
-                else:
-                    record_dict[col_name] = None
-        else:
-            record_dict = values
+        actually_used = False
+        used_index_type = None
+        used_index_col = False
 
-        offset = file_manager.append_record(record_dict)
+        def rec_to_dict(rec):
+            return rec if isinstance(rec, dict) else {schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))}
 
-        for col, index in indexes.items():
-            # Support for RTree multi-column indexes: index._columns can be present
-            key = None
-            if hasattr(index, "_columns"):
-                cols = index._columns
-                parts = [record_dict.get(c) for c in cols]
-                # if all parts are None, skip
-                if all(p is None for p in parts):
-                    continue
-                # sanitize string parts
-                parts = [p.strip().strip("'\"") if isinstance(p, str) else p for p in parts]
-                # use tuple for composite spatial key
-                key = tuple(parts)
-            else:
-                key = record_dict.get(col)
-                if key is None:
-                    continue
-                if isinstance(key, str):
-                    key = key.strip().strip("'\"")
-
-            # Índice simple almacena offset del .dat
-            if hasattr(index, "add"):
-                index.add(key, offset)
-
-        return {"success": True, "message": f"Registro insertado en {table_name}", "offset": offset}
-
-    # ---------------------------
-    # Select
-    # ---------------------------
-    def select(self, table_name, columns, condition=None, index=None, limit=None, index_hint=None):
-        table = self.tables[table_name]
-        schema, file_manager, indexes = table["schema"], table["file"], table["indexes"]
-
-        # Spatial query detection: pattern like "col IN ([x, y], radius)"
+        # 1) spatial predicate: col IN ([x,y], r)
         if isinstance(condition, str) and condition.strip():
             m = re.match(r"\s*([A-Za-z0-9_]+)\s+in\s*\(\s*\[?([^\]]+)\]?\s*,\s*([0-9\.]+)\s*\)\s*$", condition, re.I)
             if m:
@@ -298,11 +186,9 @@ class SchemaManager:
 
                 # find rtree index covering this column
                 r_idx = None
-                # direct index under same name
                 if col in indexes and "rtree" in indexes[col].__class__.__name__.lower():
                     r_idx = indexes[col]
                 else:
-                    # search for any rtree index whose _columns contains this column
                     for k, v in indexes.items():
                         try:
                             if "rtree" in v.__class__.__name__.lower():
@@ -314,24 +200,27 @@ class SchemaManager:
                             continue
 
                 if r_idx is not None:
-                    offsets = r_idx.range_search(point, radius)
-                    # If no results, try swapped coordinate order (users may supply [lat, lon])
+                    used_index_col = col
+                    actually_used = True
+                    used_index_type = r_idx.__class__.__name__ if hasattr(r_idx, '__class__') else None
+                    offsets = r_idx.range_search(point, radius) or []
+                    # retry swapped coords if none
                     if (not offsets or len(offsets) == 0) and isinstance(point, (list, tuple)) and len(point) >= 2:
                         try:
                             swapped = [point[1], point[0]]
-                            print(f"[DEBUG] spatial search returned 0; retrying with swapped coords {swapped}")
-                            offsets = r_idx.range_search(swapped, radius)
+                            offsets = r_idx.range_search(swapped, radius) or []
                         except Exception:
                             pass
+
                     results = []
                     for off in offsets:
-                        rec = file_manager.read_record(off)
+                        try:
+                            rec = file_manager.read_record(off)
+                        except Exception:
+                            rec = None
                         if not rec:
                             continue
-                        rec_dict = rec if isinstance(rec, dict) else {
-                            schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))
-                        }
-                        # normalize coordinates: if index covers x/y or joined cols, add 'coordenadas'
+                        rec_dict = rec_to_dict(rec)
                         try:
                             cols = getattr(r_idx, '_columns', None)
                             if cols and len(cols) >= 2:
@@ -348,213 +237,162 @@ class SchemaManager:
                             results.append(rec_dict)
                         if limit is not None and len(results) >= limit:
                             break
+
+                    if return_metadata:
+                        return {"rows": results, "used_index": used_index_col, "actually_used": actually_used, "used_index_type": used_index_type}
                     return results
-                else:
-                    # try to auto-create a composite rtree index if table has coordinate columns
-                    cols = [c["name"] for c in self.tables[table_name]["schema"].columns]
-                    low = [c.lower() for c in cols]
-                    pair = None
-                    for a, b in [("x", "y"), ("y", "x"), ("lat", "lon"), ("lon", "lat"), ("latitude", "longitude"), ("longitude", "latitude"), ("lng", "lat")]:
-                        if a in low and b in low:
-                            pair = (cols[low.index(a)], cols[low.index(b)])
-                            break
 
-                    if pair:
-                        # create joined index name by calling create_index; pass the first column as trigger
+        # 2) equality using index (col = value)
+        eq_col, eq_val = self._parse_simple_equality(condition) if condition else (None, None)
+        if eq_col and eq_col in indexes and hasattr(indexes[eq_col], 'find'):
+            idx_obj = indexes[eq_col]
+            raw = idx_obj.find(eq_val)
+            actually_used = True
+            used_index_col = eq_col
+            used_index_type = idx_obj.__class__.__name__ if hasattr(idx_obj, '__class__') else None
+
+            offsets = []
+            if raw is None:
+                offsets = []
+            elif isinstance(raw, list):
+                for e in raw:
+                    if isinstance(e, int):
+                        offsets.append(e)
+                    else:
                         try:
-                            # This will create an index at data/idx_rtree/<table>/<joined>
-                            self.create_index(table_name, pair[0], "rtree")
-                            # reload the index object
-                            joined = "__".join([pair[0], pair[1]])
-                            r_idx = self.tables[table_name]["indexes"].get(joined)
-                            if r_idx is not None:
-                                offsets = r_idx.range_search(point, radius)
-                                # retry with swapped coords if none found
-                                if (not offsets or len(offsets) == 0) and isinstance(point, (list, tuple)) and len(point) >= 2:
-                                    try:
-                                        swapped = [point[1], point[0]]
-                                        print(f"[DEBUG] spatial search (post-build) returned 0; retrying with swapped coords {swapped}")
-                                        offsets = r_idx.range_search(swapped, radius)
-                                    except Exception:
-                                        pass
-                                results = []
-                                for off in offsets:
-                                    rec = file_manager.read_record(off)
-                                    if not rec:
-                                        continue
-                                    rec_dict = rec if isinstance(rec, dict) else {
-                                        schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))
-                                    }
-                                    try:
-                                        cols = getattr(r_idx, '_columns', None)
-                                        if cols and len(cols) >= 2:
-                                            lon_val = rec_dict.get(cols[0])
-                                            lat_val = rec_dict.get(cols[1])
-                                            if lon_val is not None and lat_val is not None:
-                                                rec_dict['coordenadas'] = [float(lon_val), float(lat_val)]
-                                    except Exception:
-                                        pass
-                                    if columns and columns != ["*"]:
-                                        projected = {c: rec_dict.get(c) for c in columns}
-                                        results.append(projected)
-                                    else:
-                                        results.append(rec_dict)
-                                    if limit is not None and len(results) >= limit:
-                                        break
-                                return results
+                            offsets.append(int(getattr(e, 'offset')))
                         except Exception:
-                            pass
-                    # If we reach here and no rtree index could be used or builder failed,
-                    # fall back to a full scan spatial filter (Euclidean distance) so query returns results.
-                    try:
-                        # assume 'col' is the column name holding coordinates (array or string) or one of pair columns
-                        def parse_point_from_record(rec, column_name):
-                            val = rec.get(column_name)
-                            if val is None:
-                                return None
-                            if isinstance(val, (list, tuple)) and len(val) >= 2:
-                                return float(val[0]), float(val[1])
-                            if isinstance(val, str):
-                                s = val.strip()
-                                if s.startswith("[") and s.endswith("]"):
-                                    s = s[1:-1]
-                                parts = [p.strip() for p in s.split(",") if p.strip()]
-                                if len(parts) >= 2:
-                                    return float(parts[0]), float(parts[1])
-                                return None
-                            return None
+                            continue
+            elif isinstance(raw, int):
+                offsets = [raw]
+            else:
+                try:
+                    offsets = [int(getattr(raw, 'offset'))]
+                except Exception:
+                    offsets = []
 
-                        # try parse point from 'col' (the queried column) or from the first coordinate column in table
-                        results = []
-                        target = tuple(point)
-                        for rec in file_manager.scan_all():
-                            rec_dict = rec if isinstance(rec, dict) else {schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))}
-                            pt = parse_point_from_record(rec_dict, col)
-                            if pt is None:
-                                # try common paired columns
-                                if pair:
-                                    try:
-                                        px = float(rec_dict.get(pair[0]))
-                                        py = float(rec_dict.get(pair[1]))
-                                        pt = (px, py)
-                                    except Exception:
-                                        pt = None
-                            if pt is None:
-                                continue
-                            dx = pt[0] - target[0]
-                            dy = pt[1] - target[1]
-                            import math
-                            if math.hypot(dx, dy) <= radius:
-                                # attach normalized coordenadas
-                                try:
-                                    rec_dict['coordenadas'] = [float(pt[0]), float(pt[1])]
-                                except Exception:
-                                    pass
-                                if columns and columns != ["*"]:
-                                    projected = {c: rec_dict.get(c) for c in columns}
-                                    results.append(projected)
-                                else:
-                                    results.append(rec_dict)
-                                if limit is not None and len(results) >= limit:
-                                    break
-                        return results
-                    except Exception:
-                        pass
-
-        # Intento: si hay condición simple col = value y existe índice, usarlo
-        # choose index column: prefer index_hint, then equality column, then any available
-        chosen_col = None
-        if index_hint and index_hint in indexes:
-            chosen_col = index_hint
-        else:
-            eq_col, eq_val = self._parse_simple_equality(condition) if condition else (None, None)
-            if eq_col and eq_col in indexes and hasattr(indexes[eq_col], "find"):
-                chosen_col = eq_col
-
-        if chosen_col and hasattr(indexes[chosen_col], "find"):
-            # equality query using chosen index
-            eq_val = eq_val if 'eq_val' in locals() else None
-            offsets = indexes[chosen_col].find(eq_val)
             results = []
             for off in offsets:
-                rec = file_manager.read_record(off)
+                try:
+                    rec = file_manager.read_record(off)
+                except Exception:
+                    rec = None
                 if not rec:
                     continue
-                rec_dict = rec if isinstance(rec, dict) else {
-                    schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))
-                }
+                rec_dict = rec_to_dict(rec)
                 if columns and columns != ["*"]:
-                    projected = {col: rec_dict.get(col) for col in columns}
-                    results.append(projected)
+                    results.append({c: rec_dict.get(c) for c in columns})
                 else:
                     results.append(rec_dict)
                 if limit is not None and len(results) >= limit:
                     break
+
+            if return_metadata:
+                return {"rows": results, "used_index": used_index_col, "actually_used": actually_used, "used_index_type": used_index_type}
             return results
 
-        # Rango: si la condición es BETWEEN en la misma columna con índice secuencial
-        if condition and isinstance(condition, str) and "between" in condition.lower():
+        # 3) BETWEEN range on a single indexed column
+        if condition and isinstance(condition, str) and 'between' in condition.lower():
             try:
-                parts = condition.lower().split()
-                # form: col between a and b
-                col = parts[0]
-                if col in indexes and hasattr(indexes[col], "range_search"):
+                parts = condition.split()
+                if index_hint and index_hint in indexes:
+                    col = index_hint
+                else:
+                    col = parts[0]
+                if col in indexes and hasattr(indexes[col], 'range_search'):
                     a = parts[2].strip("'\"")
                     b = parts[4].strip("'\"")
-                    offsets = indexes[col].range_search(a, b)
+
+                    def _norm_key(v):
+                        try:
+                            if isinstance(v, str):
+                                s = v.strip()
+                                if re.fullmatch(r"-?\d+", s):
+                                    return int(s)
+                                if re.fullmatch(r"-?\d+\.\d+", s):
+                                    return float(s)
+                                return s
+                        except Exception:
+                            pass
+                        return v
+
+                    a = _norm_key(a)
+                    b = _norm_key(b)
+                    idx_obj = indexes[col]
+                    raw = idx_obj.range_search(a, b)
+                    actually_used = True
+                    used_index_col = col
+                    used_index_type = idx_obj.__class__.__name__ if hasattr(idx_obj, '__class__') else None
+
+                    offsets = []
+                    if raw is None:
+                        offsets = []
+                    elif isinstance(raw, list):
+                        for e in raw:
+                            if isinstance(e, int):
+                                offsets.append(e)
+                            else:
+                                try:
+                                    offsets.append(int(getattr(e, 'offset')))
+                                except Exception:
+                                    continue
+                    elif isinstance(raw, int):
+                        offsets = [raw]
+                    else:
+                        try:
+                            offsets = [int(getattr(raw, 'offset'))]
+                        except Exception:
+                            offsets = []
+
                     results = []
                     for off in offsets:
-                        rec = file_manager.read_record(off)
+                        try:
+                            rec = file_manager.read_record(off)
+                        except Exception:
+                            rec = None
                         if not rec:
                             continue
-                        rec_dict = rec if isinstance(rec, dict) else {
-                            schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))
-                        }
+                        rec_dict = rec_to_dict(rec)
                         if columns and columns != ["*"]:
-                            projected = {c: rec_dict.get(c) for c in columns}
-                            results.append(projected)
+                            results.append({c: rec_dict.get(c) for c in columns})
                         else:
                             results.append(rec_dict)
                         if limit is not None and len(results) >= limit:
                             break
+
+                    if return_metadata:
+                        return {"rows": results, "used_index": used_index_col, "actually_used": actually_used, "used_index_type": used_index_type}
                     return results
             except Exception as e:
-                print(f"[WARN] BETWEEN parsing failed: {e}")
+                if self.debug:
+                    print(f"[WARN] BETWEEN parsing failed: {e}")
 
-        # Fallback: full scan
+        # 4) Fallback full scan
         results = []
         for rec in file_manager.scan_all():
-            rec_dict = rec if isinstance(rec, dict) else {
-                schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))
-            }
+            rec_dict = rec_to_dict(rec)
             if isinstance(condition, str) and condition.strip():
                 try:
-                    # Evaluar condición con conversión de tipos
                     if "=" in condition:
                         parts = condition.split("=", 1)
                         col = parts[0].strip()
                         val = parts[1].strip().strip("'\"")
-                        
-                        # Comparar con conversión de tipos
                         record_val = rec_dict.get(col)
-                        if record_val is not None:
-                            # Intentar comparación numérica si ambos son números
-                            try:
-                                if str(record_val).isdigit() and val.isdigit():
-                                    if int(record_val) != int(val):
-                                        continue
-                                elif str(record_val).replace('.', '').isdigit() and val.replace('.', '').isdigit():
-                                    if float(record_val) != float(val):
-                                        continue
-                                elif str(record_val) != val:
-                                    continue
-                            except:
-                                if str(record_val) != val:
-                                    continue
-                        else:
+                        if record_val is None:
                             continue
+                        try:
+                            if str(record_val).isdigit() and val.isdigit():
+                                if int(record_val) != int(val):
+                                    continue
+                            elif str(record_val).replace('.', '').isdigit() and val.replace('.', '').isdigit():
+                                if float(record_val) != float(val):
+                                    continue
+                            elif str(record_val) != val:
+                                continue
+                        except Exception:
+                            if str(record_val) != val:
+                                continue
                     else:
-                        # Fallback a eval para condiciones complejas
                         if not eval(condition.replace("=", "=="), {}, rec_dict):
                             continue
                 except Exception as e:
@@ -562,12 +400,14 @@ class SchemaManager:
                         print(f"Error evaluando condición: {e}")
                     continue
             if columns and columns != ["*"]:
-                projected = {col: rec_dict.get(col) for col in columns}
-                results.append(projected)
+                results.append({col: rec_dict.get(col) for col in columns})
             else:
                 results.append(rec_dict)
             if limit is not None and len(results) >= limit:
                 break
+
+        if return_metadata:
+            return {"rows": results, "used_index": used_index_col, "actually_used": actually_used, "used_index_type": used_index_type}
         return results
 
     # ---------------------------
@@ -579,7 +419,6 @@ class SchemaManager:
 
         deleted = 0
         cond = condition.strip() if isinstance(condition, str) else condition
-        # normalize: remove trailing semicolon
         if isinstance(cond, str) and cond.endswith(";"):
             cond = cond[:-1]
 
@@ -587,10 +426,11 @@ class SchemaManager:
             try:
                 rec_dict = rec if isinstance(rec, dict) else {schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))}
 
-                # simple BETWEEN handling: "col BETWEEN a AND b"
+                matched = False
+
+                # BETWEEN handling
                 if isinstance(cond, str) and "between" in cond.lower():
                     parts = cond.lower().split()
-                    # expect: col between a and b
                     col = parts[0]
                     a = parts[2].strip("'\"")
                     b = parts[4].strip("'\"")
@@ -602,19 +442,133 @@ class SchemaManager:
                         af = float(a)
                         bf = float(b)
                         if af <= rvf <= bf:
-                            file_manager.delete_record(off)
-                            deleted += 1
+                            matched = True
                     except Exception:
-                        # non-numeric comparison
                         if str(rv) >= a and str(rv) <= b:
-                            file_manager.delete_record(off)
-                            deleted += 1
+                            matched = True
+
+                # equality/comparison
+                if not matched and isinstance(cond, str) and any(op in cond for op in ([">=", "<=", ">", "<", "="])):
+                    c = cond
+                    if "=" in c and "==" not in c and ">=" not in c and "<=" not in c:
+                        parts = c.split("=", 1)
+                        col = parts[0].strip()
+                        val = parts[1].strip().strip("'\"")
+                        rv = rec_dict.get(col)
+                        if rv is None:
+                            pass
+                        else:
+                            try:
+                                if str(rv).replace('.', '', 1).isdigit() and val.replace('.', '', 1).isdigit():
+                                    if float(rv) == float(val):
+                                        matched = True
+                                else:
+                                    if str(rv) == val:
+                                        matched = True
+                            except Exception:
+                                if str(rv) == val:
+                                    matched = True
+
+                    if not matched:
+                        for op in ([">=", ">", "<=", "<"]):
+                            if op in c:
+                                parts = c.split(op, 1)
+                                col = parts[0].strip()
+                                val = parts[1].strip().strip("'\"")
+                                rv = rec_dict.get(col)
+                                if rv is None:
+                                    break
+                                try:
+                                    rvf = float(rv)
+                                    vf = float(val)
+                                    ok = False
+                                    if op == ">=":
+                                        ok = rvf >= vf
+                                    elif op == ">":
+                                        ok = rvf > vf
+                                    elif op == "<=":
+                                        ok = rvf <= vf
+                                    elif op == "<":
+                                        ok = rvf < vf
+                                    if ok:
+                                        matched = True
+                                except Exception:
+                                    sval = str(rv)
+                                    if op == ">=":
+                                        ok = sval >= val
+                                    elif op == ">":
+                                        ok = sval > val
+                                    elif op == "<=":
+                                        ok = sval <= val
+                                    elif op == "<":
+                                        ok = sval < val
+                                    if ok:
+                                        matched = True
+                                break
+
+                # fallback eval
+                if not matched:
+                    try:
+                        if isinstance(cond, str) and eval(cond.replace("=", "=="), {}, rec_dict):
+                            matched = True
+                    except Exception:
+                        matched = False
+
+                if matched:
+                    try:
+                        file_manager.delete_record(off)
+                        deleted += 1
+                    except Exception as e:
+                        if self.debug:
+                            print(f"Error deleting record at offset {off}: {e}")
+                        continue
+
+            except Exception as e:
+                print(f"Error during delete evaluation: {e}")
+                continue
+
+        return f"{deleted} registros eliminados de {table_name}"
+
+    def count_matches(self, table_name, condition):
+        """Count how many records would match `condition` in table_name without modifying data.
+
+        This reuses the same matching logic as `delete` and `select_without_index` but returns
+        only the integer count. Useful for dry-run measurements before destructive operations.
+        """
+        table = self.tables[table_name]
+        schema, file_manager = table["schema"], table["file"]
+
+        matched = 0
+        for rec in file_manager.scan_all():
+            try:
+                rec_dict = rec if isinstance(rec, dict) else {schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))}
+                cond = condition.strip() if isinstance(condition, str) else condition
+                if isinstance(cond, str) and cond.endswith(";"):
+                    cond = cond[:-1]
+
+                # BETWEEN handling
+                if isinstance(cond, str) and "between" in cond.lower():
+                    parts = cond.lower().split()
+                    col = parts[0]
+                    a = parts[2].strip("'\"")
+                    b = parts[4].strip("'\"")
+                    rv = rec_dict.get(col)
+                    if rv is None:
+                        continue
+                    try:
+                        rvf = float(rv)
+                        af = float(a)
+                        bf = float(b)
+                        if af <= rvf <= bf:
+                            matched += 1
+                    except Exception:
+                        if str(rv) >= a and str(rv) <= b:
+                            matched += 1
                     continue
 
-                # simple equality/comparison handling
-                if isinstance(cond, str) and any(op in cond for op in [">=", "<=", ">", "<", "="]):
+                # simple operators
+                if isinstance(cond, str) and any(op in cond for op in ([">=", "<=", ">", "<", "="])):
                     c = cond
-                    # equality
                     if "=" in c and "==" not in c and ">=" not in c and "<=" not in c:
                         parts = c.split("=", 1)
                         col = parts[0].strip()
@@ -625,19 +579,15 @@ class SchemaManager:
                         try:
                             if str(rv).replace('.', '', 1).isdigit() and val.replace('.', '', 1).isdigit():
                                 if float(rv) == float(val):
-                                    file_manager.delete_record(off)
-                                    deleted += 1
+                                    matched += 1
                             else:
                                 if str(rv) == val:
-                                    file_manager.delete_record(off)
-                                    deleted += 1
+                                    matched += 1
                         except Exception:
                             if str(rv) == val:
-                                file_manager.delete_record(off)
-                                deleted += 1
+                                matched += 1
                         continue
 
-                    # >=, <=, >, <
                     for op in ([">=", ">", "<=", "<"]):
                         if op in c:
                             parts = c.split(op, 1)
@@ -659,10 +609,8 @@ class SchemaManager:
                                 elif op == "<":
                                     ok = rvf < vf
                                 if ok:
-                                    file_manager.delete_record(off)
-                                    deleted += 1
+                                    matched += 1
                             except Exception:
-                                # string compare
                                 sval = str(rv)
                                 if op == ">=":
                                     ok = sval >= val
@@ -673,22 +621,62 @@ class SchemaManager:
                                 elif op == "<":
                                     ok = sval < val
                                 if ok:
-                                    file_manager.delete_record(off)
-                                    deleted += 1
+                                    matched += 1
                             break
 
                 else:
-                    # fallback to eval (with = -> ==)
                     try:
                         if isinstance(cond, str) and eval(cond.replace("=", "=="), {}, rec_dict):
-                            file_manager.delete_record(off)
-                            deleted += 1
+                            matched += 1
                     except Exception:
                         continue
-            except Exception as e:
-                print(f"Error during delete evaluation: {e}")
+            except Exception:
                 continue
-        return f"{deleted} registros eliminados de {table_name}"
+
+        return matched
+
+    def create_table(self, table_name: str, columns_def: list, index_map: dict = None):
+        """Create a new table with the provided columns_def.
+
+        columns_def: list of {name: str, type: str}
+        index_map: optional mapping column->index_type to create indexes on table creation
+        """
+        if table_name in self.tables:
+            raise ValueError(f"Tabla {table_name} ya existe")
+
+        # Validate and normalize columns_def
+        if not isinstance(columns_def, list) or len(columns_def) == 0:
+            raise ValueError("columns_def must be a non-empty list")
+
+        # Ensure each column dict has name and type
+        cols = []
+        for c in columns_def:
+            if not isinstance(c, dict) or 'name' not in c or 'type' not in c:
+                raise ValueError("Each column must be a dict with 'name' and 'type'")
+            cols.append({'name': c['name'], 'type': c['type']})
+
+        schema = RecordSchema(cols)
+        filepath = os.path.join(self.data_dir, f"{table_name}.dat")
+        file_manager = FileManager(filepath, schema)
+
+        indexes = {}
+        # Optionally create requested indexes (best-effort)
+        if index_map and isinstance(index_map, dict):
+            for col, itype in index_map.items():
+                try:
+                    self.create_index(table_name, col, itype)
+                except Exception:
+                    # ignore index creation errors during table create
+                    continue
+
+        self.tables[table_name] = {
+            'schema': schema,
+            'file': file_manager,
+            'indexes': indexes,
+        }
+        # Persist catalog
+        self._save_catalog()
+        return f"Tabla {table_name} creada con {len(cols)} columnas"
     
     # ---------------------------
     # Crear índice
@@ -763,27 +751,56 @@ class SchemaManager:
                 os.path.join(index_dir, "nivel_3.dat"),
                 os.path.join(index_dir, "overflow.dat"),
             )
+            # ISAM now stores generic Record(id:int, offset:int).
+            # We'll convert each table record into ISAM.Record(id, offset)
+            # where `offset` is the byte offset in the table .dat file returned by _iter_with_offsets().
             for off, rec in self._iter_with_offsets(table_name):
                 try:
-                    idx.insert(rec)
+                    key = rec.get(column)
+                    if key is None:
+                        continue
+                    # Try integer conversion for the key (ISAM uses integer keys)
+                    try:
+                        id_val = int(key)
+                    except Exception:
+                        # skip non-integer keys for ISAM (could also map a hash, but keep expected semantics)
+                        continue
+                    # Create ISAM Record(id, offset)
+                    try:
+                        rec_obj = ISAMMultinivel.Record(id_val, off)
+                    except Exception:
+                        from src.dbms.isam import Record as ISAMRecord
+                        rec_obj = ISAMRecord(id_val, off)
+                    idx.insert(rec_obj)
                 except Exception as e:
                     print(f"[WARN] ISAM insert error: {e}")
+            # After buffering records, build the index files on disk
+            try:
+                idx.build_indices()
+            except Exception as e:
+                print(f"[WARN] ISAM build_indices failed: {e}")
 
         elif index_type == "btree":
             idx_file = os.path.join(index_dir, "btree.idx")
             idx = BPlusTree(idx_file)
+            # Build B+ Tree using offsets: insert(key, offset)
             for off, rec in self._iter_with_offsets(table_name):
                 key = rec.get(column)
-                if key is not None:
-                    if isinstance(key, str):
-                        try:
-                            key = int(key)
-                        except:
-                            pass
-                    try:
-                        idx.insert(key, off)
-                    except Exception as e:
-                        print(f"[WARN] BPlusTree insert error: {e}")
+                if key is None:
+                    continue
+                # normalize whitespace for strings
+                if isinstance(key, str):
+                    key = key.strip().strip("'\"")
+                # try to convert to int when possible for numeric ordering
+                try:
+                    if isinstance(key, str) and key.isdigit():
+                        key = int(key)
+                except Exception:
+                    pass
+                try:
+                    idx.insert(key, off)
+                except Exception as e:
+                    print(f"[WARN] BPlusTree insert error: {e}")
 
         elif index_type == "hash":
             idx = ExtendibleHash(table_name, column, data_dir=index_dir)
@@ -849,108 +866,12 @@ class SchemaManager:
                 idx._columns = chosen_cols
             except Exception:
                 pass
-        elif index_type == "kdtree":
-            # create a KD-Tree index (pure Python) stored under data/idx_kdtree/<table>/<column>/
-            # Use same auto-detection logic as rtree for chosen columns
-            cols = [c["name"] for c in self.tables[table_name]["schema"].columns]
-            lower = [c.lower() for c in cols]
-
-            def find_pair(a, b):
-                if a in lower and b in lower:
-                    return (cols[lower.index(a)], cols[lower.index(b)])
-                return None
-
-            pair = None
-            for a, b in [("x", "y"), ("y", "x"), ("lat", "lon"), ("lon", "lat"), ("latitude", "longitude"), ("longitude", "latitude"), ("lng", "lat")]:
-                p = find_pair(a, b)
-                if p:
-                    pair = p
-                    break
-
-            zcol = None
-            for zcand in ("z", "alt", "altitude"):
-                if zcand in lower:
-                    zcol = cols[lower.index(zcand)]
-                    break
-
-            chosen_cols = None
-            if pair:
-                chosen_cols = list(pair)
-                if zcol:
-                    chosen_cols.append(zcol)
-            else:
-                if column in cols:
-                    chosen_cols = [column]
-                else:
-                    chosen_cols = cols[:2] if len(cols) >= 2 else cols
-
-            joined = "__".join(chosen_cols)
-            index_dir = os.path.join(self.data_dir, f"idx_kdtree", table_name, joined)
-            os.makedirs(index_dir, exist_ok=True)
-            dimension = 3 if len(chosen_cols) >= 3 else 2
-            try:
-                idx = KDTree(table_name, joined, data_dir=index_dir, dimension=dimension)
-                try:
-                    idx._columns = chosen_cols
-                except Exception:
-                    pass
-                # populate from existing records
-                for off, rec in self._iter_with_offsets(table_name):
-                    try:
-                        parts = [rec.get(c) for c in chosen_cols]
-                        if all(p is None for p in parts):
-                            continue
-                        key = tuple(parts)
-                        idx.add(key, off)
-                    except Exception:
-                        continue
-            except Exception as e:
-                print(f"[WARN] KDTree creation failed: {e}")
-            # Populate the RTree from existing table records using an external builder
-            try:
-                # call external script to build the index in an isolated process to avoid C-level crashes
-                import subprocess, sys
-                script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "build_rtree_index.py")
-                cols_csv = ",".join(chosen_cols)
-                cmd = [sys.executable, script, self.data_dir, table_name, joined, cols_csv]
-                try:
-                    # run in chunks to isolate crashes; each chunk will process up to chunk_size records
-                    chunk_size = 2000
-                    start = 0
-                    max_retries = 3
-                    while True:
-                        chunk_cmd = cmd + [str(start), str(chunk_size)]
-                        try:
-                            subprocess.check_call(chunk_cmd)
-                        except subprocess.CalledProcessError as e:
-                            print(f"[WARN] RTree builder chunk failed with exit {e.returncode} at start={start}")
-                            # if crash code is common (e.g., access violation), retry a few times then abort
-                            max_retries -= 1
-                            if max_retries <= 0:
-                                break
-                            continue
-                        # if succeeded, probe how many were inserted by reading the index (count)
-                        try:
-                            tmp_idx = RTree(table_name, joined, data_dir=index_dir, dimension=dimension)
-                            inserted = tmp_idx.count()
-                            tmp_idx.close()
-                        except Exception:
-                            # unknown, advance by chunk
-                            inserted = chunk_size
-
-                        if inserted < chunk_size:
-                            # last chunk probably finished
-                            break
-                        start += chunk_size
-                except Exception as e:
-                    print(f"[WARN] RTree builder invocation failed: {e}")
-            except Exception:
-                pass
+        # kdtree support removed - not implemented in this project
         else:
             raise ValueError(f"Tipo de índice no soportado: {index_type}")
 
-        # store index object under its column key (for RTree/KDTree we may use joined name)
-        if index_type in ("rtree", "kdtree"):
+        # store index object under its column key (for RTree we may use joined name)
+        if index_type == "rtree":
             key_name = "__".join(idx._columns) if hasattr(idx, "_columns") else column
         else:
             key_name = column
@@ -990,24 +911,9 @@ class SchemaManager:
                 subprocess.check_call(cmd)
             except Exception as e:
                 print(f"[WARN] RTree multi-column builder failed: {e}")
-        elif index_type == "kdtree":
-            idx = KDTree(table_name, joined, data_dir=index_dir, dimension=dimension)
-            try:
-                idx._columns = cols
-            except Exception:
-                pass
-            # populate from table records
-            for off, rec in self._iter_with_offsets(table_name):
-                try:
-                    parts = [rec.get(c) for c in cols]
-                    if all(p is None for p in parts):
-                        continue
-                    key = tuple(parts)
-                    idx.add(key, off)
-                except Exception:
-                    continue
+        # kdtree support removed - only rtree supported for multi-column spatial index
         else:
-            raise ValueError("create_index_multi sólo soporta 'rtree' y 'kdtree'")
+            raise ValueError("create_index_multi sólo soporta 'rtree'")
 
         # store and persist
         self.tables[table_name]["indexes"][joined] = idx
@@ -1172,18 +1078,21 @@ class SchemaManager:
         """Itera registros devolviendo (offset, dict)."""
         table = self.tables[table_name]
         schema, file_manager = table["schema"], table["file"]
-        with open(file_manager.filename, "rb") as f:
-            offset = 0
-            while True:
-                binary = f.read(schema.size)
-                if not binary or len(binary) < schema.size:
-                    break
-                if binary.strip(b"\x00") == b"":
-                    offset += schema.size
-                    continue
-                rec = schema.unpack(binary)
-                yield offset, (rec if isinstance(rec, dict) else {schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))})
+        # Use FileManager.read_record which now respects logical deletions via .del sidecar
+        try:
+            fsize = os.path.getsize(file_manager.filename)
+        except Exception:
+            fsize = 0
+        total = fsize // schema.size if schema.size > 0 else 0
+        offset = 0
+        for idx in range(total):
+            rec = file_manager.read_record(offset)
+            if rec is None:
                 offset += schema.size
+                continue
+            rec_dict = rec if isinstance(rec, dict) else {schema.columns[i]["name"]: rec[i] for i in range(len(schema.columns))}
+            yield offset, rec_dict
+            offset += schema.size
 
     def _parse_simple_equality(self, condition):
         try:
@@ -1199,3 +1108,131 @@ class SchemaManager:
             return col, val
         except Exception:
             return None, None
+
+    def insert(self, table_name, values):
+        """Insert a row into table_name.
+
+        `values` may be either a dict mapping column->value or a list of values in column order.
+        The function appends the record to disk and updates any existing indexes.
+        Returns the offset where the record was written.
+        """
+        if table_name not in self.tables:
+            raise ValueError(f"Tabla {table_name} no existe")
+
+        table = self.tables[table_name]
+        schema, file_manager, indexes = table['schema'], table['file'], table['indexes']
+
+        # Normalize record to dict
+        if isinstance(values, dict):
+            rec = values
+        elif isinstance(values, (list, tuple)):
+            rec = {}
+            for i, col in enumerate(schema.columns):
+                rec[col['name']] = values[i] if i < len(values) else None
+        else:
+            raise ValueError('Unsupported values type for insert')
+
+        # Clean string tokens that may come quoted
+        for k, v in list(rec.items()):
+            if isinstance(v, str):
+                rec[k] = v.strip().strip("'\"")
+
+        # Append to data file
+        try:
+            off = file_manager.append_record(rec)
+        except Exception as e:
+            raise RuntimeError(f"Failed to append record: {e}")
+
+        # Update indexes (best-effort)
+        for col, idx in indexes.items():
+            try:
+                # For multi-column rtree index, `col` may be joined 'a__b'
+                if hasattr(idx, '_columns') and len(getattr(idx, '_columns', [])) > 1:
+                    cols = getattr(idx, '_columns')
+                    point = []
+                    for c in cols:
+                        v = rec.get(c)
+                        try:
+                            point.append(float(v))
+                        except Exception:
+                            point.append(0.0)
+                    # RTree insert expects (point, offset)
+                    try:
+                        idx.insert(point, off)
+                    except Exception:
+                        # some rtree wrappers use add/insert signature differences
+                        try:
+                            idx.add(point, off)
+                        except Exception:
+                            pass
+                    continue
+
+                key = rec.get(col)
+                # strip strings
+                if isinstance(key, str):
+                    key = key.strip().strip("'\"")
+                # numeric conversion when possible
+                try:
+                    if isinstance(key, str) and key.isdigit():
+                        key = int(key)
+                except Exception:
+                    pass
+
+                # Dispatch by known types
+                if isinstance(idx, SequentialIndex):
+                    try:
+                        idx.add(key, off)
+                    except Exception:
+                        pass
+                elif isinstance(idx, ISAMMultinivel):
+                    try:
+                        from src.dbms.isam import Record as ISAMRecord
+                        # ISAM expects integer id keys; try conversion
+                        id_val = int(key) if key is not None else 0
+                        rec_obj = ISAMRecord(id_val, off)
+                        idx.insert(rec_obj)
+                    except Exception:
+                        pass
+                else:
+                    # Try BPlusTree / ExtendibleHash / RTree generic methods
+                    try:
+                        cname = idx.__class__.__name__.lower()
+                    except Exception:
+                        cname = ''
+
+                    if 'bplus' in cname or 'btree' in cname:
+                        try:
+                            idx.insert(key, off)
+                        except Exception:
+                            pass
+                    elif 'rtree' in cname:
+                        # Single-column rtree (point stored in one column as array-like)
+                        try:
+                            # treat key as comma separated coords if string
+                            if isinstance(key, str) and (',' in key or ' ' in key):
+                                parts = re.split(r"[ ,]+", key)
+                                point = [float(p) if re.fullmatch(r"-?\d+(?:\.\d+)?", p) else 0.0 for p in parts]
+                                idx.insert(point, off)
+                            else:
+                                # otherwise try direct insert
+                                idx.insert(key, off)
+                        except Exception:
+                            try:
+                                idx.add(key, off)
+                            except Exception:
+                                pass
+                    else:
+                        # fallback: try add then insert
+                        try:
+                            if hasattr(idx, 'add'):
+                                idx.add(key, off)
+                            elif hasattr(idx, 'insert'):
+                                idx.insert(key, off)
+                        except Exception:
+                            pass
+
+            except Exception:
+                # Do not fail the whole insert if updating indexes fails for one index
+                continue
+
+        return off
