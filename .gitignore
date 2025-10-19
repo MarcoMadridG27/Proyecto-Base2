@@ -91,6 +91,7 @@ core/data/**/idx_*/
 core/data/**/idx_*/**
 core/data/**/catalog.json
 core/data/**/.catalog.json
+core/data/catalog.json
 
 # Ignore any per-test catalog directories (often used by local tests)
 core/data/test_*/catalog.json
