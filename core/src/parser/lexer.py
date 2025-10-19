@@ -23,6 +23,7 @@ def tokenize(sql: str) -> List[Tuple[str, str]]:
         if kind == "WS":
             continue
         out.append((kind, val))
+    print(out)
     return out
 
 if __name__ == "__main__":

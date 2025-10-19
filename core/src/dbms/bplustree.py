@@ -120,9 +120,10 @@ class BPlusNode:
             # saltar padding de claves no usadas
             off += (self.ORDER - self.num_keys) * keyc.size
             # escribir punteros a hijos (num_keys + 1)
-            for i in range(self.num_keys + 1):
-                struct.pack_into("<i", body, off, self.pointers[i])
-                off += 4
+            if(self.num_keys > 0):
+                for i in range(self.num_keys + 1):
+                    struct.pack_into("<i", body, off, self.pointers[i])
+                    off += 4
             # el resto se deja en cero (ya está)
         else:                    # hoja
             # escribir pares (key,row_off) utilizados

@@ -6,9 +6,9 @@ from typing import List, Tuple, Optional, Iterable
 # =========================
 # Parámetros principales
 # =========================
-BLOCK_FACTOR   = 256    # Registros por página de datos / overflow (capacidad fija)
-INDEX_FACTOR   = 128    # Separadores por página de índice (L1/L2)
-BUILD_PAGES_TR = 500    # Nº de páginas L3 "objetivo" para disparar el primer build (pre-build)
+BLOCK_FACTOR   = 150    # Registros por página de datos / overflow (capacidad fija)
+INDEX_FACTOR   = 20    # Separadores por página de índice (L1/L2)
+BUILD_PAGES_TR = 35    # Nº de páginas L3 "objetivo" para disparar el primer build (pre-build)
 
 # =========================
 # Serialización de claves

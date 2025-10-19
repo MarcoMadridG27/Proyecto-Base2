@@ -244,3 +244,12 @@ def create_index(request: IndexRequest):
         return {"ok": True, "message": f"{request.index_type} index created on {request.table_name}", "result": result}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+@app.on_event("shutdown")
+def shutdown_close_indexes():
+    for tinfo in executor.schema_manager.tables.values():
+        for idx in tinfo.get("indexes", {}).values():
+            close = getattr(idx, "close", None)
+            if callable(close):
+                try: close()
+                except: pass

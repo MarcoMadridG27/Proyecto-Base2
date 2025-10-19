@@ -6,10 +6,16 @@
   <component name="ChangeListManager">
     <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="correciones">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/core/Dockerfile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/api/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/api/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/dbms/bplustree.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/bplustree.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/dbms/extendible_hash.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/extendible_hash.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/dbms/isam.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/isam.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/dbms/sequential.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/sequential.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/dbms/rtree.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/Rtree.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/executor.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/executor.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/model/schema_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/model/schema_manager.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/parser/lexer.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/parser/lexer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/src/parser/parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/parser/parser.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -38,29 +44,29 @@
   <component name="ProjectViewState">
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;Python.executor.executor&quot;: &quot;Run&quot;,
-    &quot;Python.lexer.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;js.debugger.nextJs.config.created.client&quot;: &quot;true&quot;,
-    &quot;js.debugger.nextJs.config.created.server&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/Juan/Desktop/Proyecto-Base2&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;prettierjs.PrettierConfiguration.Package&quot;: &quot;C:\\Users\\ASUS\\proyecto-base4\\node_modules\\prettier&quot;,
-    &quot;ts.external.directory.path&quot;: &quot;C:\\Users\\ASUS\\proyecto-base4\\fronted\\node_modules\\typescript\\lib&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python.executor.executor": "Run",
+    "Python.lexer.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "basev2.0",
+    "ignore.virus.scanning.warn.message": "true",
+    "js.debugger.nextJs.config.created.client": "true",
+    "js.debugger.nextJs.config.created.server": "true",
+    "last_opened_file_path": "C:/Users/Juan/Desktop/Proyecto-Base2",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "prettierjs.PrettierConfiguration.Package": "C:\\Users\\ASUS\\proyecto-base4\\node_modules\\prettier",
+    "ts.external.directory.path": "C:\\Users\\ASUS\\proyecto-base4\\fronted\\node_modules\\typescript\\lib",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\Juan\Desktop\Proyecto-Base2\core\src" />

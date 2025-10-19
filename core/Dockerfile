@@ -1,19 +1,24 @@
 FROM python:3.12-slim
 
+# 1) Dependencias del sistema: libspatialindex + toolchain (por si rtree compila)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libspatialindex-dev build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copiar requirements
+# 2) Instalar requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar todo el código
+# 3) Copiar el proyecto
 COPY . .
 
-# Configurar PYTHONPATH para que reconozca 'src' como módulo raíz
+# 4) Que Python vea /app como raíz de módulos
 ENV PYTHONPATH=/app
 
-# Exponer puerto
 EXPOSE 8000
 
-# Comando para iniciar uvicorn
+# 5) Arranque (si vas a usar --reload, corre en dev; en prod quítalo)
 CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
