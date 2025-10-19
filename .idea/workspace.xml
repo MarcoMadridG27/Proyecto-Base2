@@ -4,18 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="correciones">
+    <list default="true" id="a0c55183-4417-4257-b399-547b9d751538" name="Changes" comment="terminado?">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/core/Dockerfile" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/api/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/api/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/dbms/bplustree.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/bplustree.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/dbms/extendible_hash.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/extendible_hash.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core/src/dbms/isam.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/isam.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/dbms/rtree.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/dbms/Rtree.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/executor.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/executor.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/model/schema_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/model/schema_manager.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/parser/lexer.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/parser/lexer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/src/parser/parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/src/parser/parser.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -319,7 +311,15 @@
       <option name="project" value="LOCAL" />
       <updated>1760568184483</updated>
     </task>
-    <option name="localTasksCounter" value="21" />
+    <task id="LOCAL-00021" summary="terminado?">
+      <option name="closed" value="true" />
+      <created>1760883665834</created>
+      <option name="number" value="00021" />
+      <option name="presentableId" value="LOCAL-00021" />
+      <option name="project" value="LOCAL" />
+      <updated>1760883665834</updated>
+    </task>
+    <option name="localTasksCounter" value="22" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -336,6 +336,7 @@
     <MESSAGE value="mejoras" />
     <MESSAGE value="hash-casi-terminado" />
     <MESSAGE value="correciones" />
-    <option name="LAST_COMMIT_MESSAGE" value="correciones" />
+    <MESSAGE value="terminado?" />
+    <option name="LAST_COMMIT_MESSAGE" value="terminado?" />
   </component>
 </project>
