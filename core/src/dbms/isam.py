@@ -232,32 +232,95 @@ class ISAMMultinivel:
             f.seek(0, 2)
             return (f.tell() // OverflowPage.SIZE_OF_PAGE) - 1
 
-    def binary_search_index(self, index_page: IndexPage, key: int):
-        tam_index = index_page.size
-        if tam_index == 0:
-            return 0
+    def binary_search_index(self, lista, key):
+        """
+        Realiza una búsqueda en 'lista' o en un IndexPage para encontrar la página
+        de datos correspondiente a 'key'. Soporta:
+         - IndexPage: devuelve el número de página (int) en pages[]
+         - listas simples: búsqueda binaria que devuelve índice aproximado
+        También intenta normalizar el tipo de 'key' para evitar comparaciones int/str.
+        """
+        # Si es un IndexPage: usar su estructura keys/pages
+        if isinstance(lista, IndexPage):
+            # si no hay entradas, devolver pages[0] por defecto
+            if lista.size == 0:
+                return lista.pages[0] if lista.pages else 0
 
-        lista = index_page.keys
-        low = 0
-        high = tam_index - 1
-        floor_index = -1
+            # Normalizar tipo de key al tipo de las keys del índice (normalmente int)
+            try:
+                sample_key = None
+                # buscar una key válida dentro del tamaño
+                for i in range(lista.size):
+                    if lista.keys[i] != 0:
+                        sample_key = lista.keys[i]
+                        break
+                if sample_key is not None:
+                    if isinstance(sample_key, int) and isinstance(key, str):
+                        key = int(key)
+                    elif isinstance(sample_key, float) and isinstance(key, str):
+                        key = float(key)
+                    elif isinstance(sample_key, str) and not isinstance(key, str):
+                        key = str(key)
+            except (ValueError, TypeError):
+                pass
 
-        while low <= high:
-            mid = (low + high) // 2
-            if lista[mid] == key:
-                floor_index = mid
-                break
-            elif lista[mid] < key:
-                floor_index = mid
-                low = mid + 1
-            else:
-                high = mid - 1
+            # Encontrar la página adecuada: primer key > key -> pages[i], sino pages[size]
+            for i in range(lista.size):
+                k = lista.keys[i]
+                if key < k:
+                    return lista.pages[i]
+            return lista.pages[lista.size]
 
-        if floor_index == -1:
-            return index_page.pages[0]
-        return index_page.pages[floor_index + 1]
+        # Si es una lista (o similar indexable), hacer búsqueda binaria clásica
+        try:
+            # manejar listas vacías
+            if not lista:
+                return None
+            # intentar normalizar al tipo del primer elemento
+            sample = lista[0]
+            try:
+                if isinstance(sample, int) and isinstance(key, str):
+                    key = int(key)
+                elif isinstance(sample, float) and isinstance(key, str):
+                    key = float(key)
+                elif isinstance(sample, str) and not isinstance(key, str):
+                    key = str(key)
+            except (ValueError, TypeError):
+                pass
 
-    def search(self, key: int):
+            lo = 0
+            hi = len(lista) - 1
+            while lo <= hi:
+                mid = (lo + hi) // 2
+                if lista[mid] == key:
+                    return mid
+                elif lista[mid] < key:
+                    lo = mid + 1
+                else:
+                    hi = mid - 1
+            return hi
+        except TypeError:
+            # tipo inesperado: devolver None para que el llamador lo maneje
+            return None
+
+    def search(self, key):
+        """
+        Método de búsqueda que usa binary_search_index. Normaliza key a número
+        cuando sea posible (las consultas vienen como strings desde el parser).
+        """
+        # coerción defensiva: intentar convertir a int/float si viene como string
+        try:
+            if not isinstance(key, (int, float)):
+                try:
+                    key = int(key)
+                except Exception:
+                    try:
+                        key = float(key)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         nivel_1 = self.load_index(self.nivel_1_index)
         nivel_2_page = self.binary_search_index(nivel_1, key)
 
@@ -283,6 +346,19 @@ class ISAMMultinivel:
     # Compatibility: return offsets lists like other index classes
     def find(self, key: int):
         """Return a list of offsets for records with id == key."""
+        # coerción defensiva: intentar convertir a int/float si viene como string
+        try:
+            if not isinstance(key, (int, float)):
+                try:
+                    key = int(key)
+                except Exception:
+                    try:
+                        key = float(key)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         res = []
         rec = self.search(key)
         if rec is None:

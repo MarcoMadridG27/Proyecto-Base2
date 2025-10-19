@@ -1190,7 +1190,22 @@ class SchemaManager:
                         # ISAM expects integer id keys; try conversion
                         id_val = int(key) if key is not None else 0
                         rec_obj = ISAMRecord(id_val, off)
-                        idx.insert(rec_obj)
+                        # Si el índice ya fue construido en disco, usar insert_after_build
+                        try:
+                            if os.path.exists(idx.nivel_3_data) and os.path.getsize(idx.nivel_3_data) > 0:
+                                idx.insert_after_build(rec_obj)
+                            else:
+                                # Si no está construido, mantener en buffer para build_indices()
+                                idx.insert(rec_obj)
+                        except Exception:
+                            # fallback: intentar ambos métodos sin explotar la inserción
+                            try:
+                                idx.insert_after_build(rec_obj)
+                            except Exception:
+                                try:
+                                    idx.insert(rec_obj)
+                                except Exception:
+                                    pass
                     except Exception:
                         pass
                 else:
