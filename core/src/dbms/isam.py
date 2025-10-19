@@ -484,72 +484,130 @@ class ISAMIndex:
     # =========================
     # API: SEARCH RANGE
     # =========================
+    # --- helpers mínimos para asomar min/max de una página ---
+    def _peek_l3_minmax(self, l3_no):
+        """Devuelve (min_key, max_key, next_ovf) de una L3 sin reconstruir toda la página."""
+        hdr_sz = _DataPage.HDR_SZ
+        entry_sz = self._tmp_data.ENTRY_SZ
+        with open(self.fp_l3, "rb") as f:
+            f.seek(self._l3_off(l3_no))
+            hdr = f.read(hdr_sz)
+            cnt, nxt = struct.unpack_from(_DataPage.HDR_FMT, hdr, 0)
+            if cnt == 0:
+                return None, None, nxt
+            # primera
+            first_off = self._l3_off(l3_no) + hdr_sz
+            f.seek(first_off)
+            kb_first = f.read(self.kc.size)
+            k_first = self.kc.unpack(kb_first)
+            # última
+            last_off = self._l3_off(l3_no) + hdr_sz + (cnt - 1) * entry_sz
+            f.seek(last_off)
+            kb_last = f.read(self.kc.size)
+            k_last = self.kc.unpack(kb_last)
+            return k_first, k_last, nxt
+
+    def _peek_ovf_minmax(self, ovf_no):
+        """Devuelve (min_key, max_key, next_ovf) de una overflow sin reconstruir toda la página."""
+        hdr_sz = _OverflowPage.HDR_SZ
+        entry_sz = self._tmp_ovf.ENTRY_SZ
+        with open(self.fp_ovf, "rb") as f:
+            f.seek(self._ovf_off(ovf_no))
+            hdr = f.read(hdr_sz)
+            cnt, nxt = struct.unpack_from(_OverflowPage.HDR_FMT, hdr, 0)
+            if cnt == 0:
+                return None, None, nxt
+            first_off = self._ovf_off(ovf_no) + hdr_sz
+            f.seek(first_off)
+            kb_first = f.read(self.kc.size)
+            k_first = self.kc.unpack(kb_first)
+            last_off = self._ovf_off(ovf_no) + hdr_sz + (cnt - 1) * entry_sz
+            f.seek(last_off)
+            kb_last = f.read(self.kc.size)
+            k_last = self.kc.unpack(kb_last)
+            return k_first, k_last, nxt
+
     def search_range(self, lo, hi) -> List[int]:
-        """
-        Devuelve offsets con clave en [lo, hi].
-        Recorrido dirigido por L1/L2 para tocar sólo las páginas L3 candidatas.
-        En overflow se revisa toda la cadena por el mismo motivo que en search().
-        """
         if self.kc.cmp(lo, hi) > 0:
             lo, hi = hi, lo
         res: List[int] = []
 
+        # Pre-build: igual que antes
         if not self._is_built():
             for k, ro in self._iter_pnd():
                 if self.kc.cmp(lo, k) <= 0 and self.kc.cmp(k, hi) <= 0:
                     res.append(ro)
             return res
 
-        # L1: determinar rango de páginas L2 a visitar
+        # L1: determina tramo de L2 relevantes
         l1 = self._read_l1()
-        start_l2 = l1.floor_child(lo); end_l2 = l1.floor_child(hi)
-        all_l2 = [l1.pages[i] for i in range(l1.size + 1)]
-        l2_list, seen = [], False
-        for p in all_l2:
-            if p == start_l2: seen = True
-            if seen: l2_list.append(p)
-            if p == end_l2: break
+        start_l2 = l1.floor_child(lo)
+        end_l2   = l1.floor_child(hi)
 
-        # Por cada L2 elegido, visitar las L3 necesarias
+        l2_list, seen = [], False
+        for p in [l1.pages[i] for i in range(l1.size + 1)]:
+            if p == start_l2:
+                seen = True
+            if seen:
+                l2_list.append(p)
+            if p == end_l2:
+                break
+
         visited_l3 = set()
         for l2_no in l2_list:
             ip = self._read_l2(l2_no)
 
-            l3_s = ip.floor_child(lo); l3_e = ip.floor_child(hi)
-            all_l3 = [ip.pages[i] for i in range(ip.size + 1)]
+            l3_s = ip.floor_child(lo)
+            l3_e = ip.floor_child(hi)
             l3_list, s3 = [], False
-            for p3 in all_l3:
-                if p3 == l3_s: s3 = True
-                if s3: l3_list.append(p3)
-                if p3 == l3_e: break
+            for p3 in [ip.pages[i] for i in range(ip.size + 1)]:
+                if p3 == l3_s:
+                    s3 = True
+                if s3:
+                    l3_list.append(p3)
+                if p3 == l3_e:
+                    break
 
             for l3_no in l3_list:
                 if l3_no in visited_l3:
                     continue
                 visited_l3.add(l3_no)
+
+                # 1) Poda rápida por min/max
+                kmin, kmax, nxt = self._peek_l3_minmax(l3_no)
+                if kmin is None:
+                    # vacía
+                    continue
+                if self.kc.cmp(kmax, lo) < 0 or self.kc.cmp(kmin, hi) > 0:
+                    # completamente fuera
+                    continue
+
+                # 2) Abrir la página principal SOLO si cruza el rango
                 pg = self._read_l3(l3_no)
+                if pg.entries:
+                    # bisect en la lista de claves para recortar el tramo
+                    ks = [x[0] for x in pg.entries]
+                    left = bisect.bisect_left(ks, lo)
+                    right = bisect.bisect_right(ks, hi)
+                    for i in range(left, right):
+                        res.append(pg.entries[i][1])
 
-                # Principal
-                for k, ro in pg.entries:
-                    if self.kc.cmp(k, lo) < 0:
-                        continue
-                    if self.kc.cmp(k, hi) > 0:
-                        break
-                    res.append(ro)
+                # 3) Overflow: recorrer cadena con poda por min/max y recorte por bisect
+                cur = nxt
+                while cur != -1:
+                    okmin, okmax, onxt = self._peek_ovf_minmax(cur)
+                    if okmin is not None:
+                        if not (self.kc.cmp(okmax, lo) < 0 or self.kc.cmp(okmin, hi) > 0):
+                            ovf = self._read_ovf(cur)
+                            if ovf.entries:
+                                ks = [x[0] for x in ovf.entries]
+                                left = bisect.bisect_left(ks, lo)
+                                right = bisect.bisect_right(ks, hi)
+                                for i in range(left, right):
+                                    res.append(ovf.entries[i][1])
+                    cur = onxt
 
-                # Overflow completo (sin early-break global)
-                nxt = pg.next_overflow
-                while nxt != -1:
-                    ovf = self._read_ovf(nxt)
-                    for k, ro in ovf.entries:
-                        if self.kc.cmp(k, lo) < 0:
-                            continue
-                        if self.kc.cmp(k, hi) > 0:
-                            continue
-                        res.append(ro)
-                    nxt = ovf.next_overflow
         return res
-
     # =========================
     # API: DELETE
     # =========================

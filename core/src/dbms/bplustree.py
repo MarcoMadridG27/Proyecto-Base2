@@ -1,4 +1,15 @@
-# B+Tree persistente con claves int/float/string (fija) y valores=row_off int32
+# B+Tree persistente con claves int/float/string (tamaño fijo) y valores=row_off int32
+# - Estructura en disco inmutable (no se cambia el layout).
+# - Optimizaciones:
+#     * Uso de UN SOLO file handle por operación (search, search_range, insert, delete).
+#     * search_range “raw-scan”: evita construir objetos/arrays por hoja; hace poda por min/max
+#       y bisect DIRECTO sobre el buffer de bytes del nodo hoja.
+#     * Copia de offsets en bloque con struct.unpack_from para el tramo útil.
+#
+# Nota: si vas a variar ORDER, intenta aproximar el tamaño del nodo a una página (≈4 KiB).
+#       Con claves de 4B y row_off de 4B, la entrada de hoja mide 8B. Para ≈4 KiB:
+#       ORDER ≈ (4096 - HEADER_SIZE) // 8  => con HEADER_FMT "<BBiii" => 14B => ~509.
+
 import os, struct, bisect
 from typing import Optional, Tuple, List
 
@@ -11,7 +22,7 @@ class KeyCodec:
     Soporta:
       - "i"  : int32 little-endian
       - "f"  : float32 little-endian
-      - "Ns" : cadena UTF-8 con longitud fija N (relleno con \x00)
+      - "Ns" : cadena UTF-8 de longitud fija N (relleno con \x00)
     """
     def __init__(self, column_type: str):
         self.kind = column_type
@@ -48,10 +59,11 @@ class BPlusNode:
     """
     Nodo del B+Tree.
       - node_type: 0=interno, 1=hoja
-      - is_root  : 1 si este nodo es la raíz en este momento
-      - num_keys : # de claves válidas
-      - parent_ptr, next_leaf: metadatos (no imprescindibles para el algoritmo aquí)
-      - keys/pointers: en internos => claves + (num_keys+1) hijos; en hojas => (key,row_off)
+      - is_root  : 1 si este nodo es la raíz
+      - num_keys : número de claves válidas
+      - parent_ptr, next_leaf: metadatos (next_leaf solo se usa en hojas)
+      - Interno => keys[0..num_keys-1], pointers[0..num_keys] (offsets de hijos)
+      - Hoja    => pares (key,row_off) con num_keys entradas
     """
     ORDER: int = 256
     KEYC: KeyCodec = None
@@ -102,10 +114,12 @@ class BPlusNode:
                 k_bytes = keyc.pack_key(self.keys[i])
                 body[off:off+keyc.size] = k_bytes
                 off += keyc.size
+            # padding de claves no usadas
             off += (self.ORDER - self.num_keys) * keyc.size
-            for i in range(self.num_keys + 1):
-                struct.pack_into("<i", body, off, self.pointers[i])
-                off += 4
+            if self.num_keys>0:
+                for i in range(self.num_keys + 1):
+                    struct.pack_into("<i", body, off, self.pointers[i])
+                    off += 4
         else:  # hoja
             for i in range(self.num_keys):
                 k_bytes = keyc.pack_key(self.keys[i])
@@ -165,7 +179,7 @@ class BPlusTree:
                 f.write(root.pack())
 
     # =========================
-    # TMP: versiones *_f que usan el MISMO file handle
+    # I/O con UN solo handle (*_f)
     # =========================
     def _read_header_f(self, f) -> Tuple[int, int]:
         f.seek(0)
@@ -196,7 +210,7 @@ class BPlusTree:
         self._write_header_f(f, total_nodes=total + 1)
         return new_off
 
-    # ----------------- Helpers -----------------
+    # ----------------- Helpers de navegación -----------------
     @staticmethod
     def _bin_search_internal(node: BPlusNode, key) -> int:
         i = bisect.bisect_right(node.keys, key)
@@ -220,10 +234,58 @@ class BPlusTree:
         return BPlusNode.ORDER // 2
 
     # -----------------------------------------------------------------
-    # API
+    # Lectura RAW para rango (sin inflar objetos por hoja)
+    # -----------------------------------------------------------------
+    def _read_node_raw_f(self, f, off: int) -> bytes:
+        """Lee el bloque completo del nodo en un buffer raw."""
+        f.seek(off)
+        return f.read(BPlusNode.NODE_SIZE)
+
+    def _leaf_bounds_by_bisect_raw(self, raw: bytes, lo, hi) -> Tuple[int, int, int]:
+        """
+        Devuelve (left, right, nk) para una hoja usando el buffer raw.
+        - No construye listas.
+        - Realiza dos búsquedas binarias leyendo claves por posición.
+        """
+        kc = self.kc
+        hdr_sz = BPlusNode.HEADER_SIZE
+        node_type, is_root, nk, parent_ptr, next_leaf = struct.unpack_from(BPlusNode.HEADER_FMT, raw, 0)
+        if node_type != 1 or nk == 0:
+            return 0, 0, nk
+
+        entry_sz = kc.size + 4
+        base = hdr_sz
+
+        def key_at(i: int):
+            p = base + i * entry_sz
+            return kc.unpack_key(raw[p:p+kc.size])
+
+        # bsearch izquierda: primera clave >= lo
+        L, R = 0, nk
+        while L < R:
+            m = (L + R) // 2
+            if key_at(m) < lo:
+                L = m + 1
+            else:
+                R = m
+        left = L
+
+        # bsearch derecha: primera clave > hi
+        L, R = 0, nk
+        while L < R:
+            m = (L + R) // 2
+            if key_at(m) <= hi:
+                L = m + 1
+            else:
+                R = m
+        right = L
+        return left, right, nk
+
+    # -----------------------------------------------------------------
+    # API de navegación
     # -----------------------------------------------------------------
     def _descend_to_leaf_f(self, f, key) -> BPlusNode:
-        """TMP: baja hasta la hoja usando el mismo file handle."""
+        """Baja hasta la hoja usando el mismo file handle."""
         root_off, _ = self._read_header_f(f)
         node = self._read_node_f(f, root_off)
         while node.node_type == 0:
@@ -231,14 +293,30 @@ class BPlusTree:
             node = self._read_node_f(f, node.pointers[idx_child])
         return node
 
+    def _find_leaf_with_stack_f(self, f, key):
+        """Como _descend_to_leaf_f, pero retorna también offset y stack para rebalanceos/borrado."""
+        root_off, _ = self._read_header_f(f)
+        node_off = root_off
+        node = self._read_node_f(f, node_off)
+        stack = []
+        while node.node_type == 0:
+            idx = self._bin_search_internal(node, key)
+            stack.append((node_off, node, idx))
+            node_off = node.pointers[idx]
+            node = self._read_node_f(f, node_off)
+        return node_off, node, stack
+
+    # -----------------------------------------------------------------
+    # BÚSQUEDA EXACTA
+    # -----------------------------------------------------------------
     def search(self, key) -> List[int]:
         """
         Busca y retorna TODOS los row_off con clave == key.
-        TMP: abre el archivo una sola vez (rb) y recorre hojas con el mismo handle.
-        Lógica del árbol intacta; solo menos I/O.
+        - Un solo handle (rb).
+        - Pase por hojas via next_leaf solo si la siguiente hoja todavía podría contener la clave.
         """
         res: List[int] = []
-        with open(self.path, "rb") as f:  # TMP: una sola apertura
+        with open(self.path, "rb") as f:
             node = self._descend_to_leaf_f(f, key)
 
             bisect_left = bisect.bisect_left
@@ -252,60 +330,75 @@ class BPlusTree:
                         res.extend(cur.pointers[i:j])
                 if cur.next_leaf == -1:
                     break
-                nxt = self._read_node_f(f, cur.next_leaf)  # TMP: mismo handle
+                nxt = self._read_node_f(f, cur.next_leaf)
                 if nxt.num_keys == 0 or (nxt.keys and nxt.keys[0] > key):
                     break
                 cur = nxt
         return res
 
+    # -----------------------------------------------------------------
+    # BÚSQUEDA POR RANGO OPTIMIZADA (raw-scan)
+    # -----------------------------------------------------------------
     def search_range(self, lo, hi) -> List[int]:
         """
         Retorna los row_off con lo <= key <= hi.
-        TMP: una sola apertura (rb) y uso del mismo handle en la caminata por next_leaf.
-        Lógica y estructura igual; solo I/O consolidada.
+        - Baja a la hoja de 'lo' y recorre next_leaf hasta pasar 'hi'.
+        - Poda por hoja usando min/max sin deserializar todo.
+        - Tramo útil por hoja via bisect sobre el buffer raw (sin listas).
+        - Copia offsets por bloque.
         """
         if lo > hi:
             lo, hi = hi, lo
 
         res: List[int] = []
-        with open(self.path, "rb") as f:  # TMP: una sola apertura
-            node = self._descend_to_leaf_f(f, lo)
+        with open(self.path, "rb") as f:
+            # Conseguimos el offset de la hoja inicial sin inflar todas luego
+            leaf_off, _, _ = self._find_leaf_with_stack_f(f, lo)
+            cur_off = leaf_off
 
-            bisect_left = bisect.bisect_left
-            bisect_right = bisect.bisect_right
+            kc = self.kc
+            hdr_sz = BPlusNode.HEADER_SIZE
+            entry_sz = kc.size + 4
 
-            cur = node
-            i = bisect_left(cur.keys, lo)
-            while True:
-                nk = cur.num_keys
-                if nk == 0:
+            while cur_off != -1:
+                raw = self._read_node_raw_f(f, cur_off)
+                node_type, is_root, nk, parent_ptr, next_leaf = struct.unpack_from(BPlusNode.HEADER_FMT, raw, 0)
+                if node_type != 1 or nk == 0:
                     break
 
-                # Fast path si hoja completa dentro del rango
-                if cur.keys[0] >= lo and cur.keys[nk - 1] <= hi:
-                    res.extend(cur.pointers[i:nk])
-                else:
-                    j = bisect_right(cur.keys, hi, i, nk)
-                    if j > i:
-                        res.extend(cur.pointers[i:j])
-                    # si hi cae en esta hoja, terminamos
-                    if j < nk:
-                        break
+                base = hdr_sz
+                # min y max de la hoja para poda rápida
+                first_k = kc.unpack_key(raw[base:base+kc.size])
+                last_pos = base + (nk - 1) * entry_sz
+                last_k  = kc.unpack_key(raw[last_pos:last_pos+kc.size])
 
-                if cur.next_leaf == -1:
+                if last_k < lo:
+                    cur_off = next_leaf
+                    continue
+                if first_k > hi:
                     break
-                nxt = self._read_node_f(f, cur.next_leaf)  # TMP: mismo handle
-                if nxt.num_keys == 0 or nxt.keys[0] > hi:
-                    break
-                cur = nxt
-                i = 0  # siguientes hojas desde el inicio
+
+                # tramo útil con bisect sobre raw
+                left, right, _ = self._leaf_bounds_by_bisect_raw(raw, lo, hi)
+                if right > left:
+                    # Bloque contiguo de row_off (int32) justo después de cada key
+                    # Offset dentro del raw hasta el primer row_off elegido:
+                    p = base + left * entry_sz + kc.size
+                    count = right - left
+                    # Desempaqueta count enteros contiguos desde p
+                    res.extend(struct.unpack_from("<" + "i"*count, raw, p))
+
+                cur_off = next_leaf
 
         return res
 
+    # -----------------------------------------------------------------
+    # INSERCIÓN (misma lógica; un solo handle)
+    # -----------------------------------------------------------------
     def insert(self, key, row_off: int):
         """
-        Inserta (key,row_off). Si hay split, propaga; si la raíz se parte, crea nueva raíz.
-        TMP: uso de un único handle r+b durante toda la inserción recursiva.
+        Inserta (key,row_off). Si hay split, se promociona y se crean nodos nuevos.
+        - Un único handle r+b durante toda la inserción.
         """
         with open(self.path, "r+b") as f:
             root_ptr, _ = self._read_header_f(f)
@@ -386,12 +479,12 @@ class BPlusTree:
         return (promoted, right_off)
 
     # -----------------------------------------------------------------
-    # Borrado + Rebalanceo (mismo handle)
+    # BORRADO + Rebalanceo (un solo handle)
     # -----------------------------------------------------------------
     def delete(self, key) -> List[int]:
         """
         Elimina TODAS las ocurrencias de 'key' y retorna sus row_off.
-        TMP: una sola apertura (r+b) durante todo el rebalance.
+        - Un solo handle r+b para toda la operación.
         """
         with open(self.path, "r+b") as f:
             leaf_off, leaf, stack = self._find_leaf_with_stack_f(f, key)
@@ -418,18 +511,6 @@ class BPlusTree:
             self._fix_underflow_leaf_f(f, leaf_off, leaf, stack)
             self._maybe_shrink_root_f(f)
             return removed
-
-    def _find_leaf_with_stack_f(self, f, key):
-        root_off, _ = self._read_header_f(f)
-        node_off = root_off
-        node = self._read_node_f(f, node_off)
-        stack = []
-        while node.node_type == 0:
-            idx = self._bin_search_internal(node, key)
-            stack.append((node_off, node, idx))
-            node_off = node.pointers[idx]
-            node = self._read_node_f(f, node_off)
-        return node_off, node, stack
 
     def _fix_parent_separator_after_leftmost_change_f(self, f, stack, child_off, child_node):
         if not stack or child_node.num_keys == 0:
@@ -466,7 +547,7 @@ class BPlusTree:
             leaf.pointers.append(right.pointers.pop(0))
             right.num_keys -= 1
             leaf.num_keys += 1
-            parent.keys[idx] = right.keys[0]
+            parent.keys[idx] = right.keys[0] if right.num_keys > 0 else parent.keys[idx]
             self._write_node_f(f, right, right_off)
             self._write_node_f(f, leaf, leaf_off)
             self._write_node_f(f, parent, parent_off)
