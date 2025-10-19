@@ -807,5 +807,207 @@
     "indexes": {
       "id": "sequential"
     }
+  },
+  "cities_5kkk": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INT"
+      },
+      {
+        "name": "ciudad",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "id_provincia",
+        "type": "INT"
+      },
+      {
+        "name": "codigo_provincia",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "nombre_provincia",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "nivel_admin",
+        "type": "INT"
+      },
+      {
+        "name": "codigo_pais",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "nombre_pais",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "latitud",
+        "type": "FLOAT"
+      },
+      {
+        "name": "longitud",
+        "type": "FLOAT"
+      },
+      {
+        "name": "wikidata_id",
+        "type": "VARCHAR[100]"
+      }
+    ],
+    "indexes": {
+      "id": "sequential"
+    }
+  },
+  "cities_10kkk": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INT"
+      },
+      {
+        "name": "ciudad",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "id_provincia",
+        "type": "INT"
+      },
+      {
+        "name": "codigo_provincia",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "nombre_provincia",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "nivel_admin",
+        "type": "INT"
+      },
+      {
+        "name": "codigo_pais",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "nombre_pais",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "latitud",
+        "type": "FLOAT"
+      },
+      {
+        "name": "longitud",
+        "type": "FLOAT"
+      },
+      {
+        "name": "wikidata_id",
+        "type": "VARCHAR[100]"
+      }
+    ],
+    "indexes": {
+      "id": "sequential"
+    }
+  },
+  "cities_50kkk": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INT"
+      },
+      {
+        "name": "ciudad",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "id_provincia",
+        "type": "INT"
+      },
+      {
+        "name": "codigo_provincia",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "nombre_provincia",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "nivel_admin",
+        "type": "INT"
+      },
+      {
+        "name": "codigo_pais",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "nombre_pais",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "latitud",
+        "type": "FLOAT"
+      },
+      {
+        "name": "longitud",
+        "type": "FLOAT"
+      },
+      {
+        "name": "wikidata_id",
+        "type": "VARCHAR[100]"
+      }
+    ],
+    "indexes": {
+      "id": "sequential"
+    }
+  },
+  "cities_100kkk": {
+    "columns": [
+      {
+        "name": "id",
+        "type": "INT"
+      },
+      {
+        "name": "ciudad",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "id_provincia",
+        "type": "INT"
+      },
+      {
+        "name": "codigo_provincia",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "nombre_provincia",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "nivel_admin",
+        "type": "INT"
+      },
+      {
+        "name": "codigo_pais",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "nombre_pais",
+        "type": "VARCHAR[100]"
+      },
+      {
+        "name": "latitud",
+        "type": "FLOAT"
+      },
+      {
+        "name": "longitud",
+        "type": "FLOAT"
+      },
+      {
+        "name": "wikidata_id",
+        "type": "VARCHAR[100]"
+      }
+    ],
+    "indexes": {}
   }
 }

@@ -75,3 +75,23 @@ docker-compose.override.yml
 # ================================
 UsersASUSAppDataLocalnpm-cache/
 desktop.ini
+
+# ================================
+# 🔒 DATABASE / GENERATED INDEXES
+# ================================
+# Ignore generated table/index files and catalogs so personal DB state isn't pushed.
+# Keep raw CSVs and source data; only ignore runtime files created by the app.
+# - .dat and .del files used by the DB engine
+# - index folders prefixed with idx_
+# - per-directory catalog.json files that store table/index metadata
+core/data/**/*.dat
+core/data/**/*.dat.del
+core/data/**/*.del
+core/data/**/idx_*/
+core/data/**/idx_*/**
+core/data/**/catalog.json
+core/data/**/.catalog.json
+
+# Ignore any per-test catalog directories (often used by local tests)
+core/data/test_*/catalog.json
+
