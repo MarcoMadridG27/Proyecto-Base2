@@ -10,6 +10,26 @@
 | Juan Inca | 202310363  |
 | Joaquin Huamán | 202210170 |
 
+# 🚀 Guía de Ejecución con Docker
+
+Para ejecutar correctamente el proyecto en tu entorno local:
+
+1. **Construir las imágenes Docker:**
+   ```bash
+   docker compose build
+   ```
+
+2. **Levantar los contenedores en segundo plano:**
+   ```bash
+   docker compose up -d
+   ```
+
+3. **Acceder al frontend:**
+   Abre tu navegador y visita:
+   ```
+   http://localhost:3000
+   ```
+
 # Introducción
 
 ## Objetivo del Proyecto
@@ -537,4 +557,29 @@ Donde:
 ![](Images/RtreeConIndice.png)
 
 
-# Conclusiones
+# 🧩 Conclusiones
+
+1. **Integración de múltiples estructuras de indexación**  
+   El proyecto logró implementar e integrar diversas estructuras de datos avanzadas —**Sequential Index File, ISAM, Extendible Hashing, B+ Tree y R-Tree**—, cada una con su propio esquema de almacenamiento binario y manejo eficiente de registros. Esto permitió comparar sus fortalezas y limitaciones en distintos tipos de consultas.
+
+2. **Parser y ejecución SQL personalizada**  
+   Se diseñó un **parser SQL propio**, capaz de interpretar consultas básicas (`CREATE`, `INSERT`, `SELECT`, `DELETE`, `CREATE INDEX`), reconociendo tipos de índice y condiciones lógicas.  
+   Esta capa de interpretación permitió conectar el lenguaje SQL con los módulos de almacenamiento interno, logrando una experiencia de uso más natural y cercana a un gestor real de bases de datos.
+
+3. **Optimización de rendimiento en disco**  
+   Cada índice fue desarrollado con **lectura y escritura directa en archivos binarios**, utilizando estructuras fijas y punteros lógicos.  
+   Esto permitió simular fielmente el comportamiento de un **motor de base de datos físico**, evaluando la eficiencia de acceso en operaciones de búsqueda, inserción y rango.
+
+4. **Soporte a datos espaciales (R-Tree)**  
+   La implementación del R-Tree permitió extender el motor hacia **consultas geoespaciales** (por radio o vecinos más cercanos), integrando cálculos de distancia y demostrando cómo un índice espacial puede mejorar las búsquedas sobre coordenadas.
+
+5. **Aprendizaje técnico y arquitectura modular**  
+   A nivel de diseño, el proyecto consolidó conceptos de **sistemas de archivos, estructuras de datos avanzadas, y gestión de índices persistentes**, aplicados en un entorno modular con **FastAPI + React + Docker**, lo que facilita la escalabilidad y la experimentación con distintos esquemas de indexación.
+
+6. **Comparación experimental de rendimiento**  
+   Los resultados de las pruebas gráficas evidencian que:
+   - **B+Tree** y **ISAM** ofrecen mejor rendimiento en búsquedas secuenciales.  
+   - **Extendible Hashing** domina en inserciones aleatorias.  
+   - **R-Tree** amplía la funcionalidad espacial.  
+   Estas diferencias reflejan la importancia de seleccionar el índice adecuado según el tipo de consulta y los patrones de acceso.
+
