@@ -444,8 +444,8 @@ Finalmente, los resultados se ordenan por ID antes de retornarlos.
 ![](Images/ISAM.png)
 ## Rtree
 ### Sin  Indice
-![](Images/comparativa_sin_indice.png)
+![](Images/RtreeSinIndice.png)
 ### Con  Indice
-![](Images/comparativa_con_indice.png)
+![](Images/RtreeConIndice.png)
 
 # Conclusiones
