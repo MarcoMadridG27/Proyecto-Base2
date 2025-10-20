@@ -8,7 +8,7 @@
 | Henry Quispe | 202320078 |
 | Maria Surco | 202110358 |
 | Juan Inca | 202310363  |
-| Joaquin Huamán |  |
+| Joaquin Huamán | 202210170 |
 
 # Introducción
 
@@ -430,7 +430,42 @@ Finalmente, los resultados se ordenan por ID antes de retornarlos.
 | Search         | O(log n)      | O(log n)        |
 | Range Search   | O(log n + k)  | O(log n + k)    |
 
-## Rtree
+## R-tree
+Estructura de datos de árbol diseñada específicamente para indexar información espacial multidimensional La idea central del R-tree es agrupar objetos espaciales cercanos y representarlos con un Rectángulo Mínimo Delimitador (MBR, por sus siglas en inglés) en el nodo padre. El árbol es una jerarquía de estos MBRs:
+- Nodos Hoja: Contienen punteros a los objetos de datos reales (ej: la geometría de una ciudad).
+- Nodos Internos: Contienen punteros a sus nodos hijos, junto con el MBR que encierra todos los MBRs de sus hijos.
+
+### Características Principales
+- Multidimensional: A diferencia de los B-trees que indexan datos de una sola dimensión (ej: un número de ID), los R-trees pueden indexar 2 o más dimensiones simultáneamente.
+- Dinámico: Soporta inserciones y eliminaciones de forma eficiente (como vimos en las pruebas de INSERT y DELETE), reajustando el árbol (balanceo, división de nodos) según sea necesario.
+- Balanceado: Al igual que un B-tree, todos los nodos hoja se encuentran en el mismo nivel, garantizando que los tiempos de búsqueda no degeneren.
+- Superposición (Overlapping): Esta es la característica clave y la principal diferencia con los B-trees. Dado que es imposible dividir el espacio 2D perfectamente sin cortar objetos, los MBRs de los nodos hermanos pueden superponerse. Esto implica que una consulta de búsqueda a veces puede necesitar descender por múltiples ramas del árbol.
+
+
+---
+
+### RangeSearch (Radio) - rangeSearch(point, radio):
+Esta operación define un "círculo de búsqueda". Su objetivo es encontrar y devolver todos los objetos (ciudades) que se encuentran dentro de una distancia (radio) específica desde un punto de consulta central. El número de resultados es variable, ya que depende de cuántos puntos caigan dentro de esa área. El algoritmo sigue un procedimiento de escaneo y filtrado: primero, recibe las entradas del punto central y un radio; luego, itera la tabla completa, fila por fila. Por cada fila, calcula la distancia geodésica exacta entre el punto de esa fila y el punto central. Después, compara la distancia calculada con el radio; si la distancia es menor o igual al radio, la fila se añade al conjunto de resultados, de lo contrario, se ignora. Finalmente, una vez que ha revisado todas las filas, el algoritmo devuelve el conjunto completo de todas las filas que cumplieron la condición.
+
+---
+
+### RangeSearch (KNN) - rangeSearch(point, k)
+Esta operación, conocida como K-Nearest Neighbors (KNN), no le importa una distancia fija, sino que su objetivo es encontrar un número fijo (k) de objetos que estén lo más cerca posible del punto de consulta. El número de resultados es fijo (siempre será $k$). El algoritmo es computacionalmente más complejo, ya que implica un ordenamiento: primero, recibe las entradas del punto central y un número $k$. Luego, itera la tabla completa, fila por fila, y por cada una calcula la distancia geodésica exacta al punto central. En lugar de filtrar, almacena temporalmente cada fila junto con su distancia calculada. Una vez que ha calculado la distancia para todas las filas, realiza una operación de ordenamiento (Sort) masiva sobre toda la lista, ordenándola por la distancia calculada de menor a mayor. Después, toma las primeras $k$ filas de esa lista ya ordenada y, finalmente, devuelve ese subconjunto como resultado.
+
+---
+| Algoritmo | Mejor/Promedio Caso | Peor Caso |
+| :--- | :---: | :---: |
+| Insert | $O(\log n)$ | $O(n)$ |
+| Delete | $O(\log n)$ | $O(n)$ |
+| `rangeSearch(point, radio)` | $O(\log n + k)$ | $O(n + k)$ |
+| `rangeSearch(point, k)` [KNN] | $O(\log n + k)$ | $O(n + k)$ |
+
+Donde:
+- $n$: Es el número total de elementos indexados.
+- $k$: Es el número de elementos devueltos por la consulta.
+- $O(n)$ (Peor Caso): A diferencia de un B+tree, el peor caso de un R-tree es lineal. Esto se debe a que las "cajas" (MBRs) de los nodos pueden superponerse, y una consulta podría teóricamente verse forzada a explorar casi todas las ramas del árbol.
+
+---
 
 # Experimentación
 
@@ -443,9 +478,6 @@ Finalmente, los resultados se ordenan por ID antes de retornarlos.
 ## ISAM
 ![](Images/ISAM.png)
 ## Rtree
-### Sin  Indice
-![](Images/comparativa_sin_indice.png)
-### Con  Indice
-![](Images/comparativa_con_indice.png)
+
 
 # Conclusiones
