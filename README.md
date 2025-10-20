@@ -11,6 +11,35 @@
 | Joaquin Huamán |  |
 
 # Introducción
+
+## Objetivo del Proyecto
+
+El objetivo principal de este proyecto es **comprender y aplicar técnicas de organización e indexación de archivos físicos** para **optimizar la gestión, el almacenamiento y la recuperación eficiente de datos estructurados** dentro de un modelo relacional basado en tablas. Además, se explorará la integración de soporte para **datos espaciales**. El proyecto busca desarrollar un **mini gestor de bases de datos** que implemente las operaciones fundamentales de **inserción, eliminación y búsqueda** de manera eficiente.
+
+***
+
+## Descripción de la Aplicación
+
+Se desarrollará una **herramienta de organización y gestión de archivos planos (flat files)** que maneja datos con distintas estructuras. \
+Esta aplicación puede ser utilizada en múltiples escenarios donde se requiera **ordenar, catalogar y recuperar información de manera rápida y estructurada**. 
+
+Ejemplos de su uso incluyen:
+
+* **Organización de Informes o Documentos:** Indexar grandes volúmenes de informes para búsquedas rápidas.
+* **Gestión de Datos de Personas:** Almacenar y buscar eficientemente registros de usuarios o clientes.
+* **Análisis de Datos de Compras/Transacciones:** Ordenar y consultar datos transaccionales, potencialmente incorporando **índices espaciales** para analizar ubicaciones geográficas de las transacciones.
+
+La aplicación servirá como un banco de pruebas para **combinar e integrar diversas técnicas de indexación**, permitiendo la validación funcional del sistema mediante el uso de **archivos planos con datos reales**.
+
+***
+
+## Resultados Esperados
+
+Al aplicar y comparar las diferentes técnicas de indexación (como B-trees, índices hash, y potencialmente estructuras de datos espaciales), esperamos obtener los siguientes resultados:
+
+1. **Optimización del Rendimiento:** Lograr una **alta eficiencia** en las operaciones fundamentales (**inserción, eliminación y búsqueda**) en comparación con soluciones no indexadas o indexadas de forma subóptima.
+2. **Claridad y Documentación:** Producir un **código con estructura clara** e incluir una **breve documentación técnica** que justifique el diseño, las decisiones de implementación (especialmente en la elección de las técnicas de indexación) y que detalle los resultados de las pruebas de rendimiento.
+3. **Soporte a Datos Complejos:** Integrar con éxito el soporte para **datos espaciales**, ampliando la capacidad de la herramienta más allá de los datos puramente alfanuméricos.
 # Algoritmos
 ## Sequential
 
