@@ -5,7 +5,7 @@
 | Nombre Completo | Código|
 | :--- | :--- | 
 | Marco Madrid | 202320053  |
-| Henry Quispe |  |
+| Henry Quispe | 202320078 |
 | Maria Surco | 202110358 |
 | Juan Inca |  |
 | Joaquin Huamán |  |
@@ -131,11 +131,92 @@ O(log n + k), siendo *k* el número de registros dentro del rango.
 ### Range Search
 
 ## BPluss Tree
+# Implementación de Índice B+ Tree en Disco
+
+Este módulo proporciona una implementación de un índice **Árbol B+** (`BPlusTree`) que opera directamente sobre disco, utilizando la clase auxiliar `BPlusNode` para representar los nodos del árbol. Está diseñado específicamente para funcionar como un índice secundario, mapeando **claves** a **punteros** (offsets) que indican la ubicación de los registros completos en un archivo de datos principal.
+
+La estructura se basa en nodos (`BPlusNode`) de tamaño fijo, determinado por la constante `ORDER` (que define el número máximo de claves por nodo). Esto optimiza las operaciones de I/O al leer/escribir bloques de tamaño predecible. 
+
+Características clave:
+- **Persistencia en Disco:** Toda la estructura del árbol reside en un archivo binario (`.idx`).
+- **Balanceado:** El árbol se mantiene balanceado automáticamente durante inserciones y eliminaciones, garantizando un rendimiento logarítmico.
+- **Nodos Hoja Enlazados:** Los nodos hoja están conectados secuencialmente (`next_leaf`), permitiendo búsquedas por rango eficientes.
+- **Manejo de Tipos (Intento):** Incluye una función de comparación (`_cmp`) que intenta manejar claves numéricas y de texto, aunque el empaquetado/desempaquetado actual está fijo para enteros.
+
+---
 
 ### Insert
+
+La inserción de un par `(clave, puntero)` sigue estos pasos:
+1.  **Búsqueda:** Se busca la **hoja** apropiada donde debería residir la nueva clave, descendiendo desde la raíz y usando búsqueda binaria (`binary_intern`) en cada nodo interno.
+2.  **Inserción en Hoja:**
+    * Si la hoja tiene espacio (menos de `ORDER` claves), la clave y el puntero se insertan manteniendo el orden. Se utiliza `bisect_left` (adaptado con `_cmp`) para encontrar la posición correcta.
+    * Si la hoja está **llena** (`ORDER` claves), se produce un **split**:
+        * La hoja se divide en dos nodos hoja.
+        * La clave central (aproximadamente) se **promueve** al nodo padre.
+        * Los punteros `next_leaf` se actualizan para mantener la cadena.
+3.  **Propagación de Splits:** Si la promoción de una clave causa que un **nodo interno** se llene, este también se divide:
+    * El nodo interno se divide en dos.
+    * La clave central se promueve al padre.
+    * Este proceso puede continuar recursivamente **hasta la raíz**. Si la raíz se divide, la **altura del árbol aumenta** en uno.
+
+La complejidad típica de la inserción es **O(log<sub>B</sub> N)**, donde B es el `ORDER` y N el número de claves, debido a la naturaleza balanceada del árbol.
+
+---
+
 ### Delete
+
+La eliminación de una clave sigue un proceso similar pero inverso al de inserción:
+1.  **Búsqueda:** Se localiza la **hoja** que contiene la clave a eliminar, descendiendo desde la raíz.
+2.  **Eliminación en Hoja:** Se elimina la clave y su puntero asociado de la hoja.
+3.  **Manejo de Underflow:** Si, tras la eliminación, el número de claves en la hoja cae por debajo del mínimo (`MIN_KEYS`), se produce un **underflow**:
+    * **Préstamo (Redistribución):** Se intenta tomar prestada una clave del hermano izquierdo o derecho si este tiene claves suficientes (más de `MIN_KEYS`). Esto implica ajustar también la clave separadora en el nodo padre.
+    * **Fusión (Merge):** Si ninguno de los hermanos puede prestar, la hoja se fusiona con uno de sus hermanos (izquierdo o derecho). Esto requiere eliminar la clave separadora del nodo padre.
+4.  **Propagación de Underflow:** La eliminación de una clave en el padre (debido a una fusión) puede causar un underflow en el nodo interno. Este se maneja de forma similar: intentando redistribuir con un hermano interno o fusionando nodos internos. Este proceso puede propagarse **hasta la raíz**. Si la raíz queda vacía (con un solo puntero), esa raíz se elimina y su único hijo se convierte en la nueva raíz, **disminuyendo la altura** del árbol.
+
+La complejidad típica de la eliminación también es **O(log<sub>B</sub> N)**.
+
+---
+
 ### Search
+
+La búsqueda de una clave específica (`search` o `find`) es muy eficiente:
+1.  **Descenso:** Se comienza en la raíz y se utiliza búsqueda binaria (`binary_intern` adaptado con `_cmp`) en cada nodo interno para decidir qué puntero seguir hacia el siguiente nivel.
+2.  **Localización en Hoja:** Al llegar a un nodo hoja, se usa búsqueda binaria (`binary_leaf` adaptado con `_cmp`) para encontrar la clave exacta.
+3.  **Resultado:**
+    * `search`: Devuelve el primer puntero encontrado para esa clave (o `None`).
+    * `find`: Devuelve una **lista** de todos los punteros asociados a esa clave (maneja duplicados), escaneando hacia los lados en la hoja y potencialmente en las hojas siguientes si hay duplicados que cruzan límites de nodo.
+
+La complejidad de encontrar la primera clave es **O(log<sub>B</sub> N)**. La función `find` puede tener una complejidad adicional si hay muchos duplicados (`+d`, donde `d` es el número de duplicados).
+
+---
+
 ### Range Search
+
+Gracias a los punteros `next_leaf`, la búsqueda por rango (`range_search(inicio, fin)`) es eficiente:
+1.  **Localizar Inicio:** Se busca la **hoja** y la posición donde debería estar `begin_key` (usando la misma lógica de descenso que `search`).
+2.  **Escaneo Secuencial:**
+    * Se recorren las claves/punteros en la hoja actual desde la posición encontrada. Si una clave está dentro del rango `[begin_key, end_key]`, se añade su puntero a los resultados.
+    * Si se llega al final de la hoja actual, se sigue el puntero `next_leaf` para pasar a la siguiente hoja.
+    * Se repite el escaneo en las hojas siguientes.
+3.  **Terminación:** El proceso se detiene cuando se encuentra una clave mayor que `end_key` o cuando se llega al final de la última hoja.
+
+La complejidad es **O(log<sub>B</sub> N + k)**, donde `log N` es el costo de encontrar la hoja inicial y `k` es el número de elementos dentro del rango recuperados.
+
+---
+
+### Resumen B+ Tree
+
+| Algoritmo      | Complejidad Típica | Notas                                                    |
+| :------------- | :----------------- | :------------------------------------------------------- |
+| Insert         | O(log<sub>B</sub> N) | Puede involucrar splits que suben hasta la raíz.           |
+| Delete         | O(log<sub>B</sub> N) | Puede involucrar merges/redistribuciones hasta la raíz. |
+| Search (Exacto) | O(log<sub>B</sub> N) | Búsqueda logarítmica hasta la hoja.                    |
+| Find (Duplicados)| O(log<sub>B</sub> N + d) | `d` = número de duplicados encontrados.               |
+| Range Search   | O(log<sub>B</sub> N + k) | `k` = número de elementos en el rango.                |
+
+*(N es el número total de claves en el índice, B es el `ORDER` del árbol)*
+
 
 ## ISAM
 
