@@ -7,7 +7,7 @@
 | Marco Madrid | 202320053  |
 | Henry Quispe | 202320078 |
 | Maria Surco | 202110358 |
-| Juan Inca |  |
+| Juan Inca | 202310363  |
 | Joaquin Huamán |  |
 
 # Introducción
@@ -151,36 +151,135 @@ O(log n + k), siendo *k* el número de registros dentro del rango.
 - *n*: número de registros en la región principal (D).  
 - *m*: número de registros en la región auxiliar (A).  
 - *k*: número de resultados devueltos en la búsqueda o rango.
-- 
 ### Extendible Hashing
+
 ## Descripción general
 El Extendible Hashing es un índice dinámico en disco que organiza pares (key, row_off) usando una función hash.
 A medida que los datos crecen, el índice se adapta automáticamente: divide solo los buckets que se llenan y expande el directorio cuando el desborde se vuelve largo (rehash global).
 Gracias a esto, mantiene costos promedio cercanos a O(1) para búsquedas, inserciones y borrados, incluso con grandes volúmenes de datos.
+Este método permite que el índice crezca dinámicamente sin necesidad de reconstruirse desde cero, y mantiene su eficiencia al controlar la longitud media de las cadenas de overflow.
+
 ## Proceso de construcción
+
 ### Inicialización de archivos
-**Archivo .dir (directorio):** contiene la cabecera (D, dir_count = 2^D) y 2^D celdas de 4 bytes con punteros a buckets.
-**Archivo .bkt (buckets):** crea dos buckets base (d = 1) y reparte las claves por su último bit.
-**Carga de registros** Se itera la tabla base y, para cada fila, se ejecuta insert(key, row_off).
+- Archivo .dir (directorio): contiene la cabecera (D, dir_count = 2^D) y 2^D celdas de 4 bytes con punteros a buckets.
+- Archivo .bkt (buckets): crea dos buckets base (d = 1) y reparte las claves por su último bit.
+
+### Carga de registros
+Se itera sobre la tabla base y, para cada fila, se ejecuta:
+insert(key, row_off)
+Cada inserción determina el bucket adecuado según el valor de hash(key) y lo almacena en el bucket correspondiente.
+
 ### Estructuras resultantes
-   - Directorio con profundidad global D vigente.
-   - Conjunto de buckets base con atributos: d, count, next_ptr, suffix, y posibles cadenas de overflow.
-### El índice está compuesto por dos archivos principales:
-#### Directorio (.dir):
-Guarda la profundidad global D y un arreglo de 2^D punteros a buckets.
-#### Buckets (.bkt):
-Cada bucket almacena hasta B entradas (key, row_off), su profundidad local d, un sufijo y un puntero next_ptr al siguiente bucket cuando hay overflow. El puntero nulo real es -1.
-### Insert
-Para insertar, se calcula idx = hash(key) mod 2^D y se escribe en el bucket base.
-   **- Si hay espacio**, se agrega y listo. Costo promedio: O(1).
-   **- Si el bucket está lleno y d < D**, se hace split local: el bucket se divide en dos con d+1, se redistribuyen sus entradas (incluida su cadena de overflow) según el nuevo bit, y el directorio actualiza solo las entradas que apuntaban a ese bucket. Costo del split: O(s), donde s es el número de entradas reinsertadas de esa cadena.
-   **- Si el bucket está lleno y d = D:** o	Si la cadena de overflow alcanzó MAX_CHAIN, se hace rehash global: se duplica el directorio (D := D+1), se cortan todas las cadenas y se reinsertan solo las entradas de overflow de todos los buckets base. Costo del rehash: O(T), donde T es el total de entradas de overflow reinsertadas.
-   **- Si no se alcanza MAX_CHAIN**, se encadena otro bucket al final (overflow). Costo amortizado: O(1).
+Una vez creado el índice, se obtiene:
+- Directorio con profundidad global D vigente.
+- Conjunto de buckets base, cada uno con:
+  - Profundidad local d
+  - Contador count
+  - Puntero next_ptr (hacia bucket de overflow)
+  - suffix (bits del hash que identifican el bucket)
+  - Posibles cadenas de overflow
 
+## Estructura en disco
+El índice está compuesto por dos archivos principales:
 
-### Delete
-### Search
-### Range Search
+### Directorio (.dir)
+Guarda la profundidad global D y un arreglo de 2^D punteros a buckets.  
+El directorio puede duplicarse cuando ocurre un rehash global.
+
+### Buckets (.bkt)
+Cada bucket almacena hasta B entradas (key, row_off), su profundidad local d, un sufijo y un puntero next_ptr al siguiente bucket cuando hay overflow.  
+El puntero nulo real es -1.
+
+## Insert
+Para insertar un registro, se calcula:
+idx = hash(key) mod 2^D
+y se escribe en el bucket base correspondiente.
+
+### Casos de inserción
+- Si hay espacio:
+  Se agrega la entrada directamente.
+  Costo promedio: O(1).
+
+- Si el bucket está lleno y d < D:
+  Se realiza un split local:
+  El bucket se divide en dos (d + 1).
+  Se redistribuyen las entradas (incluyendo su cadena de overflow) según el nuevo bit.
+  El directorio actualiza solo las entradas que apuntaban a ese bucket.
+  Costo: O(s), donde s es el número de entradas reinsertadas.
+
+- Si el bucket está lleno y d = D:
+  Si la cadena de overflow alcanzó MAX_CHAIN, se realiza un rehash global:
+  Se duplica el directorio (D := D + 1).
+  Se cortan las cadenas de overflow.
+  Se reinsertan todas las entradas de overflow de los buckets base.
+  Costo: O(T), donde T es el total de entradas reinsertadas.
+  Si no se alcanza MAX_CHAIN, se encadena otro bucket de overflow al final.
+  Costo amortizado: O(1).
+
+## Search
+Para buscar una clave:
+1. Se calcula el índice idx = hash(key) mod 2^D.
+2. Se lee el bucket base correspondiente.
+3. Si no se encuentra, se recorre su cadena de overflow siguiendo next_ptr.
+4. Devuelve todos los row_off que coinciden con la clave.
+
+Costos:
+- Promedio: O(1 + L̄)
+- Peor caso: O(L)
+Donde:
+- L̄ es la longitud media de la cadena.
+- L es la longitud máxima antes del rehash.
+
+## Delete
+Para eliminar una clave:
+1. Se localiza el bucket usando la función hash.
+2. Se eliminan todas las coincidencias compactando con swap desde el último registro válido.
+3. Si un bucket de overflow queda vacío, se desenlaza de la cadena.
+4. Si el bucket base queda vacío, las entradas del directorio que lo apuntaban se redirigen al siguiente bucket disponible.
+
+Costos:
+- Promedio: O(1 + L̄)
+- Peor caso: O(L)
+
+## Control de colisiones (Split, Overflow y Rehash)
+El Extendible Hashing maneja las colisiones mediante tres mecanismos:
+
+1. Split local:
+   Si el bucket puede dividirse (d < D), se redistribuyen las entradas según el nuevo bit del hash.
+
+2. Encadenamiento (Overflow):
+   Si el bucket alcanza su capacidad máxima y no puede dividirse (d = D), se agrega un bucket de overflow enlazado.
+
+3. Rehash global:
+   Si las cadenas de overflow superan MAX_CHAIN, se duplica el directorio (D := D + 1) y se reinsertan los registros de overflow.
+
+Este mecanismo garantiza que la longitud media de las cadenas (L̄) se mantenga baja, preservando los costos amortizados O(1).
+
+## Complejidad de operaciones
+Operación | Costo promedio | Peor caso
+-----------|----------------|-----------
+Build (creación y carga de datos) | O(N) + O(T) | —
+Insert | O(1) | O(s) / O(T)
+Search | O(1 + L̄) | O(L)
+Delete | O(1 + L̄) | O(L)
+
+Parámetros:
+- N: número de registros
+- B: capacidad del bucket
+- D: profundidad global
+- L̄: longitud media de cadena
+- L: longitud máxima de cadena
+- s: número de entradas reinsertadas en un split local
+- T: número de entradas de overflow reinsertadas en un rehash global
+
+## Resumen
+El Extendible Hashing mantiene el equilibrio entre espacio y velocidad al adaptar dinámicamente su estructura:
+- Divide solo los buckets necesarios.
+- Encadena temporalmente buckets de overflow.
+- Duplica el directorio solo cuando es imprescindible.
+
+Con esta estrategia, logra un rendimiento cercano a O(1) en la mayoría de las operaciones, ofreciendo una solución escalable y eficiente para el manejo de grandes volúmenes de datos en disco.
 
 ## BPluss Tree
 Este módulo proporciona una implementación de un índice **Árbol B+** (`BPlusTree`) que opera directamente sobre disco, utilizando la clase auxiliar `BPlusNode` para representar los nodos del árbol. Está diseñado específicamente para funcionar como un índice secundario, mapeando **claves** a **punteros** (offsets) que indican la ubicación de los registros completos en un archivo de datos principal.
