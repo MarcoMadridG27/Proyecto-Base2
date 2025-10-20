@@ -313,13 +313,13 @@ Finalmente, los resultados se ordenan por ID antes de retornarlos.
 # Experimentación
 
 ## Sequential
-![](Images\Sequential.jpg)
+![](Images/Sequential.jpg)
 ## Hash
-![](Images\Hash.png)
+![](Images/Hash.png)
 ## BPlus Tree
-![](Images\Btree.jpg)
+![](Images/Btree.jpg)
 ## ISAM
-![](Images\ISAM.png)
+![](Images/ISAM.png)
 ## Rtree
 
 
