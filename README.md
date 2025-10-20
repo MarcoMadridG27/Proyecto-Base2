@@ -315,7 +315,7 @@ Finalmente, los resultados se ordenan por ID antes de retornarlos.
 ## Sequential
 ![](Images\Sequential.jpg)
 ## Hash
-
+![](Images\Hash.png)
 ## BPlus Tree
 ![](Images\Btree.jpg)
 ## ISAM
