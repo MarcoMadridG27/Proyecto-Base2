@@ -33,7 +33,7 @@ Esta estructura **mantiene una lista lógica ordenada** (`head_ptr → next_ptr 
 
 ---
 
-## Insert
+### Insert
 
 La operación `insert()` agrega nuevos registros sin alterar la región principal, preservando el orden lógico:
 
@@ -56,7 +56,7 @@ La operación `insert()` agrega nuevos registros sin alterar la región principa
 
 ---
 
-## Delete
+### Delete
 
 La operación `delete()` recorre la lista lógica y **marca los registros como eliminados (tombstone)**, sin necesidad de compactar inmediatamente el archivo.
 
@@ -74,7 +74,7 @@ La operación `delete()` recorre la lista lógica y **marca los registros como e
 
 ---
 
-## Search
+### Search
 
 La función `search()` permite recuperar todos los `offsets` cuyos valores coincidan con una clave dada.
 
@@ -89,7 +89,7 @@ La función `search()` permite recuperar todos los `offsets` cuyos valores coinc
 
 ---
 
-## Range Search
+### Range Search
 
 El método `search_range(lo, hi)` permite realizar búsquedas por **rango de valores** `[lo, hi]` en orden ascendente.
 
@@ -109,7 +109,7 @@ O(log n + k), siendo *k* el número de registros dentro del rango.
 
 ---
 
-## Resumen Sequential
+### Resumen Sequential
 
 | **Algoritmo**   | **Mejor Caso** | **Peor Caso**          |
 |------------------|----------------|-------------------------|
@@ -131,8 +131,6 @@ O(log n + k), siendo *k* el número de registros dentro del rango.
 ### Range Search
 
 ## BPluss Tree
-# Implementación de Índice B+ Tree en Disco
-
 Este módulo proporciona una implementación de un índice **Árbol B+** (`BPlusTree`) que opera directamente sobre disco, utilizando la clase auxiliar `BPlusNode` para representar los nodos del árbol. Está diseñado específicamente para funcionar como un índice secundario, mapeando **claves** a **punteros** (offsets) que indican la ubicación de los registros completos en un archivo de datos principal.
 
 La estructura se basa en nodos (`BPlusNode`) de tamaño fijo, determinado por la constante `ORDER` (que define el número máximo de claves por nodo). Esto optimiza las operaciones de I/O al leer/escribir bloques de tamaño predecible. 
