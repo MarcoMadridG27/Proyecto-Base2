@@ -312,4 +312,15 @@ Finalmente, los resultados se ordenan por ID antes de retornarlos.
 
 # Experimentación
 
+## Sequential
+![](Images\Sequential.jpg)
+## Hash
+
+## BPlus Tree
+![](Images\Btree.jpg)
+## ISAM
+![](Images\ISAM.png)
+## Rtree
+
+
 # Conclusiones
