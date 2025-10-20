@@ -40,7 +40,60 @@ Al aplicar y comparar las diferentes técnicas de indexación (como B-trees, ín
 1. **Optimización del Rendimiento:** Lograr una **alta eficiencia** en las operaciones fundamentales (**inserción, eliminación y búsqueda**) en comparación con soluciones no indexadas o indexadas de forma subóptima.
 2. **Claridad y Documentación:** Producir un **código con estructura clara** e incluir una **breve documentación técnica** que justifique el diseño, las decisiones de implementación (especialmente en la elección de las técnicas de indexación) y que detalle los resultados de las pruebas de rendimiento.
 3. **Soporte a Datos Complejos:** Integrar con éxito el soporte para **datos espaciales**, ampliando la capacidad de la herramienta más allá de los datos puramente alfanuméricos.
+
+# Parser
+
+Hemos implementado nuestro **parser** dentro del directorio `core/src/parser`, el cual consta de dos componentes principales:
+
+- **lexer.py**: tokenizador basado en expresiones regulares que convierte la consulta SQL en una secuencia de tokens `(kind, value)`.
+- **parser.py**: analizador sintáctico que recorre los tokens generados y construye una representación intermedia (AST), utilizada posteriormente por los módulos `Executor` y `SchemaManager`.
+
+---
+
+## Flujo de funcionamiento
+
+### 1. Tokenización (`lexer.py`)
+
+En esta etapa, hemos definido en `token_re` los patrones necesarios para identificar los distintos tipos de tokens:
+
+- `NUMBER`: `\d+(\.\d+)?` (reconoce números enteros y flotantes)
+- `STRING`: `'...'` o `"..."` (cadenas entre comillas)
+- `IDENT`: identificadores como nombres de tablas o columnas (letras, guiones bajos y números)
+- `OP`: operadores como `=`, `<`, `>`, `<=`, `>=`, `between`, `in`
+- `SYMBOL`: símbolos especiales (paréntesis, comas, corchetes, asterisco)
+- `WS`: espacios en blanco (que son ignorados)
+
+El **lexer** devuelve una lista de tuplas `(kind, value)` que representan la secuencia de tokens.  
+En esta fase no realizamos ninguna conversión de tipos; simplemente agrupamos el texto según su categoría.
+
+---
+
+### 2. Análisis sintáctico (`parser.py`)
+
+El método principal `SQLParser.parse(query)` es el encargado de procesar la consulta SQL.  
+Su funcionamiento se resume en los siguientes pasos:
+
+1. Llamamos a `tokenize(query)` para obtener la lista de tokens.  
+2. Normalizamos los tokens, pasando a minúsculas los identificadores y operadores.  
+3. Detectamos la operación principal de la consulta (`CREATE`, `INSERT`, `DELETE`, `SELECT`, `CREATE INDEX`) y delegamos a la función correspondiente:
+
+   - **_parse_create**: extrae el nombre de la tabla, las columnas, los tipos de datos y el mapa de índices.  
+   - **_parse_insert**: soporta tanto la forma `INSERT ... VALUES(...)` como la que incluye una lista de columnas; maneja paréntesis anidados y conserva las comillas hasta el procesamiento posterior.  
+   - **_parse_delete**: obtiene la tabla objetivo y la condición especificada después de `WHERE`.  
+   - **_parse_select**: extrae columnas, tabla, condición (entre `WHERE` y `USING/LIMIT`), y gestiona las cláusulas opcionales `USING` y `LIMIT`.  
+   - **_parse_create_index**: extrae el tipo de índice, la tabla y la columna asociada.
+
+Durante el preprocesamiento, los tokens `IDENT` y `OP` se **normalizan en minúsculas**, mientras que los tokens `STRING` y `NUMBER` se mantienen tal cual.
+
+---
+
+Con este parser, hemos logrado traducir consultas SQL sencillas a una **estructura interna manipulable**, manteniendo un diseño modular, claro y extensible.  
+Esto nos permite integrar de manera eficiente la ejecución de comandos SQL dentro de nuestro sistema, además de facilitar futuras extensiones para soportar operaciones más complejas.
+
+
+
 # Algoritmos
+
 ## Sequential
 
 Para nuestro proyecto hemos desarrollado una estructura **Sequential Index File** (Archivo Secuencial Indexado con Zona Auxiliar), diseñada para mantener un **acceso ordenado y eficiente** a los registros almacenados en disco, combinando una **región principal estática (D)** con una **región auxiliar dinámica (A)**.
@@ -478,6 +531,11 @@ Donde:
 ## ISAM
 ![](Images/ISAM.png)
 ## Rtree
+### Sin Indice
+![](Images/RtreeSinIndice.png)
+
+### RTree con Indice
+![](Images/RtreeConIndice.png)
 
 
 # Conclusiones
