@@ -583,3 +583,9 @@ Donde:
    - **R-Tree** amplía la funcionalidad espacial.  
    Estas diferencias reflejan la importancia de seleccionar el índice adecuado según el tipo de consulta y los patrones de acceso.
 
+# 🎥 Video Explicativo y Casos de Uso
+
+Video demostrativo del proyecto y los casos de uso prácticos en el siguiente enlace de Google Drive:
+
+👉 [Ver video y casos de uso](https://drive.google.com/drive/folders/13iMGBZT_h5Ybw-ugf5oS2p5XMx5LgEID?usp=sharing)
+
