@@ -20,8 +20,7 @@ El objetivo principal de este proyecto es **comprender y aplicar técnicas de or
 
 ## Descripción de la Aplicación
 
-Se desarrollará una **herramienta de organización y gestión de archivos planos (flat files)** que maneja datos con distintas estructuras. \
-Esta aplicación puede ser utilizada en múltiples escenarios donde se requiera **ordenar, catalogar y recuperar información de manera rápida y estructurada**. 
+Se desarrollará una **herramienta de organización y gestión de archivos planos (flat files)** que maneja datos con distintas estructuras. 
 
 Ejemplos de su uso incluyen:
 
