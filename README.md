@@ -151,10 +151,35 @@ O(log n + k), siendo *k* el número de registros dentro del rango.
 - *n*: número de registros en la región principal (D).  
 - *m*: número de registros en la región auxiliar (A).  
 - *k*: número de resultados devueltos en la búsqueda o rango.
-
-## Hash
-
+- 
+### Extendible Hashing
+## Descripción general
+El Extendible Hashing es un índice dinámico en disco que organiza pares (key, row_off) usando una función hash.
+A medida que los datos crecen, el índice se adapta automáticamente: divide solo los buckets que se llenan y expande el directorio cuando el desborde se vuelve largo (rehash global).
+Gracias a esto, mantiene costos promedio cercanos a O(1) para búsquedas, inserciones y borrados, incluso con grandes volúmenes de datos.
+## Proceso de construcción
+### Inicialización de archivos
+Archivo .dir (directorio): contiene la cabecera (D, dir_count = 2^D) y 2^D celdas de 4 bytes con punteros a buckets.
+Archivo .bkt (buckets): crea dos buckets base (d = 1) y reparte las claves por su último bit.
+### Carga de registros
+Se itera la tabla base y, para cada fila, se ejecuta insert(key, row_off).
+Estructuras resultantes
+Directorio con profundidad global D vigente.
+Conjunto de buckets base con atributos: d, count, next_ptr, suffix, y posibles cadenas de overflow.
+### El índice está compuesto por dos archivos principales:
+#### Directorio (.dir):
+Guarda la profundidad global D y un arreglo de 2^D punteros a buckets.
+#### Buckets (.bkt):
+Cada bucket almacena hasta B entradas (key, row_off), su profundidad local d, un sufijo y un puntero next_ptr al siguiente bucket cuando hay overflow. El puntero nulo real es -1.
 ### Insert
+Para insertar, se calcula idx = hash(key) mod 2^D y se escribe en el bucket base.
+•	Si hay espacio, se agrega y listo. Costo promedio: O(1).
+•	Si el bucket está lleno y d < D, se hace split local: el bucket se divide en dos con d+1, se redistribuyen sus entradas (incluida su cadena de overflow) según el nuevo bit, y el directorio actualiza solo las entradas que apuntaban a ese bucket. Costo del split: O(s), donde s es el número de entradas reinsertadas de esa cadena.
+•	Si el bucket está lleno y d = D:
+o	Si la cadena de overflow alcanzó MAX_CHAIN, se hace rehash global: se duplica el directorio (D := D+1), se cortan todas las cadenas y se reinsertan solo las entradas de overflow de todos los buckets base. Costo del rehash: O(T), donde T es el total de entradas de overflow reinsertadas.
+o	Si no se alcanza MAX_CHAIN, se encadena otro bucket al final (overflow). Costo amortizado: O(1).
+Tiempo de construcción (insertando):
+
 ### Delete
 ### Search
 ### Range Search
