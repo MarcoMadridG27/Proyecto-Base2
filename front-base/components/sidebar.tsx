@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Upload, Database, Network, Map, GraduationCap } from "lucide-react"
+import { LayoutDashboard, Upload, Database, Network, Map, GraduationCap, Search, Image, BarChart3, HelpCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navigation = [
@@ -11,6 +11,10 @@ const navigation = [
   { name: "SQL Query", href: "/query", icon: Database },
   { name: "Index Explorer", href: "/indexes", icon: Network },
   { name: "Spatial Results", href: "/spatial", icon: Map },
+  { name: "Text Search", href: "/text-search", icon: Search },
+  { name: "Multimedia Search", href: "/multimedia-search", icon: Image },
+  { name: "Performance", href: "/performance", icon: BarChart3 },
+  { name: "Help", href: "/help", icon: HelpCircle },
 ]
 
 export function Sidebar() {
