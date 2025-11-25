@@ -757,3 +757,12 @@ def reload_catalog():
         return {"ok": True, "message": "Catalog reloaded"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# Text Search Endpoints
+from src.api.text_search_routes import register_text_search_routes
+register_text_search_routes(app, DATA_DIR)
+
+# Multimedia Search Endpoints
+from src.api.multimedia_routes import register_multimedia_routes
+register_multimedia_routes(app, DATA_DIR)

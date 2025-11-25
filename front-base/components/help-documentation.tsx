@@ -3,7 +3,19 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { HelpCircle, BookOpen, Code2, Github, ExternalLink } from "lucide-react"
+import {
+  HelpCircle,
+  BookOpen,
+  Code2,
+  Github,
+  ExternalLink,
+  Database,
+  Search,
+  Image,
+  FileText,
+  Zap,
+  Music
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export function HelpDocumentation() {
@@ -12,20 +24,20 @@ export function HelpDocumentation() {
       {/* Header */}
       <div className="animate-fade-in">
         <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-foreground via-foreground to-foreground/70 bg-clip-text text-transparent">
-          Help & Documentation
+          Ayuda y Documentación
         </h1>
         <p className="text-muted-foreground mt-2">
-          Guía de uso, ejemplos y referencias del sistema UTEC Multimodal DB
+          Guía completa del Sistema de Base de Datos Multimodal - Proyecto 2
         </p>
       </div>
 
       {/* Tabs */}
       <Tabs defaultValue="guide" className="space-y-6">
         <TabsList className="grid w-full max-w-2xl grid-cols-4 bg-white/5 border border-white/10">
-          <TabsTrigger value="guide">Quick Guide</TabsTrigger>
-          <TabsTrigger value="examples">Examples</TabsTrigger>
-          <TabsTrigger value="queries">Queries</TabsTrigger>
-          <TabsTrigger value="resources">Resources</TabsTrigger>
+          <TabsTrigger value="guide">Guía Rápida</TabsTrigger>
+          <TabsTrigger value="features">Funcionalidades</TabsTrigger>
+          <TabsTrigger value="examples">Ejemplos</TabsTrigger>
+          <TabsTrigger value="resources">Recursos</TabsTrigger>
         </TabsList>
 
         {/* Quick Guide Tab */}
@@ -34,125 +46,174 @@ export function HelpDocumentation() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BookOpen className="h-5 w-5 text-primary" />
-                Quick Start Guide
+                Guía de Inicio Rápido
               </CardTitle>
-              <CardDescription>Get started with the UTEC Multimodal Database System</CardDescription>
+              <CardDescription>Aprende a usar el sistema paso a paso</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Step 1 */}
+              {/* Búsqueda de Texto */}
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold">
                     1
                   </div>
-                  <h3 className="text-lg font-semibold">Upload Data</h3>
+                  <h3 className="text-lg font-semibold">Búsqueda de Texto</h3>
                 </div>
                 <p className="text-sm text-muted-foreground ml-11">
-                  Go to <span className="font-mono text-primary">File Upload</span> and upload your CSV file.
-                  The system will automatically detect column types and create a table.
+                  Ve a <span className="font-mono text-primary">Text Search</span> y sube un archivo CSV con columnas{" "}
+                  <code className="bg-black/30 px-1 rounded">id</code> y{" "}
+                  <code className="bg-black/30 px-1 rounded">text</code>. El sistema construirá un índice invertido
+                  usando SPIMI y podrás buscar documentos por similitud de texto usando TF-IDF y Cosine Similarity.
                 </p>
               </div>
 
-              {/* Step 2 */}
+              {/* Búsqueda Multimedia */}
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold">
                     2
                   </div>
-                  <h3 className="text-lg font-semibold">Create Indexes</h3>
+                  <h3 className="text-lg font-semibold">Búsqueda Multimedia (Imágenes y Audio)</h3>
                 </div>
                 <p className="text-sm text-muted-foreground ml-11">
-                  Use <span className="font-mono text-primary">Index Explorer</span> to create indexes on
-                  your tables. Choose between Sequential, B-Tree, ISAM, Hash, or R-Tree indexes.
+                  En <span className="font-mono text-primary">Multimedia Search</span>, sube un archivo ZIP con
+                  imágenes (.jpg, .png) o audios (.wav, .mp3). El sistema extraerá características visuales (SIFT)
+                  o acústicas (MFCC) y creará un índice. Luego podrás buscar imágenes/audios similares.
                 </p>
               </div>
 
-              {/* Step 3 */}
+              {/* Comparación de Métodos */}
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold">
                     3
                   </div>
-                  <h3 className="text-lg font-semibold">Query Data</h3>
+                  <h3 className="text-lg font-semibold">Comparar Métodos de Búsqueda</h3>
                 </div>
                 <p className="text-sm text-muted-foreground ml-11">
-                  Write SQL queries in <span className="font-mono text-primary">SQL Query</span> to search
-                  your data. Use indexes for faster retrieval. Compare performance with and without indexes.
+                  Usa la pestaña <span className="font-mono text-primary">Compare Methods</span> para ver la
+                  diferencia de rendimiento entre búsqueda secuencial (KNN) y búsqueda indexada (Inverted Index).
+                  Verás métricas de tiempo de ejecución y speedup.
                 </p>
               </div>
 
-              {/* Step 4 */}
+              {/* Visualización de Resultados */}
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold">
                     4
                   </div>
-                  <h3 className="text-lg font-semibold">Analyze Results</h3>
+                  <h3 className="text-lg font-semibold">Visualizar Resultados</h3>
                 </div>
                 <p className="text-sm text-muted-foreground ml-11">
-                  Use <span className="font-mono text-primary">Performance & Benchmark</span> to visualize
-                  query performance metrics and compare different search techniques.
-                </p>
-              </div>
-
-              {/* Step 5 */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold">
-                    5
-                  </div>
-                  <h3 className="text-lg font-semibold">Advanced Search</h3>
-                </div>
-                <p className="text-sm text-muted-foreground ml-11">
-                  Try <span className="font-mono text-primary">Text Search</span> for TF-IDF and
-                  Cosine Similarity searches, or <span className="font-mono text-primary">Multimedia Search</span> for
-                  image and audio similarity queries.
+                  Los resultados se muestran ordenados por similitud. Para texto, verás el contenido del documento
+                  y el score de similitud. Para multimedia, verás las imágenes/audios similares con porcentajes
+                  de similitud.
                 </p>
               </div>
             </CardContent>
           </Card>
 
-          {/* Features Overview */}
+          {/* Important Notes */}
+          <Card className="glass-card border-white/10 bg-gradient-to-br from-yellow-500/10 to-transparent">
+            <CardHeader>
+              <CardTitle className="text-yellow-500">⚠️ Notas Importantes</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm text-muted-foreground">
+              <p>• <strong>Formato CSV para texto:</strong> Debe tener columnas <code className="bg-black/30 px-1 rounded">id</code> o <code className="bg-black/30 px-1 rounded">doc_id</code> y <code className="bg-black/30 px-1 rounded">text</code> o <code className="bg-black/30 px-1 rounded">content</code>.</p>
+              <p>• <strong>Formato ZIP para multimedia:</strong> Puede contener imágenes y/o audios en cualquier estructura de carpetas.</p>
+              <p>• <strong>Tamaño de vocabulario (K):</strong> Para multimedia, K=100 es rápido pero básico. K=500 da mejores resultados.</p>
+              <p>• <strong>Reconstruir índice:</strong> Si cambias los datos, debes reconstruir el índice para ver los cambios.</p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Features Tab */}
+        <TabsContent value="features" className="space-y-6 animate-fade-in">
           <Card className="glass-card border-white/10">
             <CardHeader>
-              <CardTitle>Available Features</CardTitle>
+              <CardTitle>Funcionalidades Principales</CardTitle>
+              <CardDescription>Todas las capacidades del sistema</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 md:grid-cols-2">
                 {[
                   {
-                    title: "SQL Query Support",
-                    desc: "Full SQL support with SELECT, INSERT, DELETE, WHERE, BETWEEN, and JOIN operations",
+                    icon: FileText,
+                    title: "Búsqueda de Texto (SPIMI)",
+                    desc: "Índice invertido con TF-IDF y Cosine Similarity. Soporta búsquedas en lenguaje natural con ranking de relevancia.",
                   },
                   {
-                    title: "Multiple Index Types",
-                    desc: "Sequential, B-Tree, ISAM, Extendible Hash, and R-Tree spatial indexes",
+                    icon: Image,
+                    title: "Búsqueda de Imágenes (SIFT)",
+                    desc: "Extracción de características visuales usando SIFT. Búsqueda por similitud visual con Bag of Visual Words y distancia Chi-Cuadrado.",
                   },
                   {
-                    title: "Text Retrieval",
-                    desc: "TF-IDF and Cosine Similarity based text search with ranked results",
+                    icon: Music,
+                    title: "Búsqueda de Audio (MFCC)",
+                    desc: "Análisis de características acústicas usando MFCC. Encuentra audios similares por contenido sonoro.",
                   },
                   {
-                    title: "Multimedia Search",
-                    desc: "Content-based image and audio similarity search using embeddings",
+                    icon: Zap,
+                    title: "Índice Invertido",
+                    desc: "Estructura de datos optimizada para búsquedas rápidas. Usa posting lists con TF-IDF weights para ranking eficiente.",
                   },
                   {
-                    title: "Performance Metrics",
-                    desc: "Real-time execution time tracking and benchmark comparisons",
+                    icon: Search,
+                    title: "KNN Secuencial vs Indexado",
+                    desc: "Compara búsqueda secuencial (fuerza bruta) contra búsqueda indexada. Visualiza métricas de rendimiento.",
                   },
                   {
-                    title: "CSV Import",
-                    desc: "Automatic column type detection and data validation on upload",
+                    icon: Database,
+                    title: "Bag of Words / Visual Words",
+                    desc: "Clustering de características usando K-Means. Convierte descriptores en histogramas para comparación eficiente.",
                   },
-                ].map((feature, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
-                  >
-                    <h4 className="font-semibold text-foreground mb-1">{feature.title}</h4>
-                    <p className="text-xs text-muted-foreground">{feature.desc}</p>
-                  </div>
-                ))}
+                ].map((feature, idx) => {
+                  const Icon = feature.icon
+                  return (
+                    <div
+                      key={idx}
+                      className="p-4 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
+                    >
+                      <div className="flex items-start gap-3 mb-2">
+                        <Icon className="h-5 w-5 text-primary mt-0.5" />
+                        <h4 className="font-semibold text-foreground">{feature.title}</h4>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{feature.desc}</p>
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Technical Details */}
+          <Card className="glass-card border-white/10">
+            <CardHeader>
+              <CardTitle>Detalles Técnicos</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <h4 className="font-semibold text-foreground">Algoritmos Implementados</h4>
+                <ul className="text-sm text-muted-foreground space-y-1 ml-4">
+                  <li>• <strong>SPIMI:</strong> Single-Pass In-Memory Indexing para construcción eficiente de índices</li>
+                  <li>• <strong>TF-IDF:</strong> Term Frequency - Inverse Document Frequency para ponderación de términos</li>
+                  <li>• <strong>Cosine Similarity:</strong> Medida de similitud entre vectores de documentos</li>
+                  <li>• <strong>SIFT:</strong> Scale-Invariant Feature Transform para detección de puntos clave en imágenes</li>
+                  <li>• <strong>MFCC:</strong> Mel-Frequency Cepstral Coefficients para análisis de audio</li>
+                  <li>• <strong>K-Means:</strong> Clustering para creación de vocabularios visuales/acústicos</li>
+                  <li>• <strong>Chi-Square Distance:</strong> Métrica optimizada para comparación de histogramas</li>
+                </ul>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-semibold text-foreground">Estructuras de Datos</h4>
+                <ul className="text-sm text-muted-foreground space-y-1 ml-4">
+                  <li>• <strong>Inverted Index:</strong> term → [(doc_id, tf-idf_weight), ...]</li>
+                  <li>• <strong>Document Metadata:</strong> doc_id → {'{'}length, norm, text{'}'}</li>
+                  <li>• <strong>Codebook:</strong> K-Means clusters para vocabulario visual/acústico</li>
+                  <li>• <strong>Feature Vectors:</strong> Histogramas normalizados L1 para comparación</li>
+                </ul>
               </div>
             </CardContent>
           </Card>
@@ -164,136 +225,82 @@ export function HelpDocumentation() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Code2 className="h-5 w-5 text-primary" />
-                Usage Examples
+                Ejemplos de Uso
               </CardTitle>
-              <CardDescription>Common use cases and workflows</CardDescription>
+              <CardDescription>Casos de uso comunes paso a paso</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Example 1 */}
+              {/* Ejemplo 1 */}
               <div className="space-y-3">
-                <h4 className="font-semibold text-foreground">Example 1: Upload and Search</h4>
-                <div className="rounded-lg bg-black/30 border border-white/10 p-4 font-mono text-sm">
-                  <p className="text-blue-400">
-                    1. Upload a file (cities_1k.csv) via File Upload
-                  </p>
-                  <p className="text-blue-400">2. System creates table: cities_1k</p>
-                  <p className="text-blue-400">
-                    3. Query: SELECT * FROM cities_1k WHERE id = 5
-                  </p>
-                  <p className="text-green-400">Result: Fast with index on id</p>
+                <h4 className="font-semibold text-foreground">Ejemplo 1: Búsqueda de Documentos de Texto</h4>
+                <div className="rounded-lg bg-black/30 border border-white/10 p-4 font-mono text-sm space-y-1">
+                  <p className="text-blue-400">1. Ve a "Text Search" → pestaña "Upload & Index"</p>
+                  <p className="text-blue-400">2. Sube un CSV con columnas: id, text</p>
+                  <p className="text-blue-400">3. Haz clic en "Upload & Build Index"</p>
+                  <p className="text-blue-400">4. Ve a la pestaña "Search"</p>
+                  <p className="text-blue-400">5. Escribe: "machine learning algorithms"</p>
+                  <p className="text-blue-400">6. Selecciona Top-K: 10</p>
+                  <p className="text-green-400">✓ Resultado: Lista de documentos ordenados por relevancia</p>
                 </div>
               </div>
 
-              {/* Example 2 */}
+              {/* Ejemplo 2 */}
               <div className="space-y-3">
-                <h4 className="font-semibold text-foreground">Example 2: Text Search</h4>
-                <div className="rounded-lg bg-black/30 border border-white/10 p-4 font-mono text-sm">
-                  <p className="text-blue-400">
-                    1. Go to Text Search
-                  </p>
-                  <p className="text-blue-400">
-                    2. Enter query: "database optimization"
-                  </p>
-                  <p className="text-blue-400">3. Select Top-K: 10 results</p>
-                  <p className="text-blue-400">4. Choose method: TF-IDF & Cosine</p>
-                  <p className="text-green-400">Result: Ranked documents by relevance</p>
+                <h4 className="font-semibold text-foreground">Ejemplo 2: Búsqueda de Imágenes Similares</h4>
+                <div className="rounded-lg bg-black/30 border border-white/10 p-4 font-mono text-sm space-y-1">
+                  <p className="text-blue-400">1. Ve a "Multimedia Search" → pestaña "Build Index"</p>
+                  <p className="text-blue-400">2. Sube un ZIP con imágenes (ej: paisajes.zip)</p>
+                  <p className="text-blue-400">3. Vocabulary Size (K): 200</p>
+                  <p className="text-blue-400">4. Haz clic en "Build Index"</p>
+                  <p className="text-blue-400">5. Ve a "Search" y sube una imagen de consulta</p>
+                  <p className="text-blue-400">6. Top-K: 5</p>
+                  <p className="text-green-400">✓ Resultado: Galería de imágenes similares con % de similitud</p>
                 </div>
               </div>
 
-              {/* Example 3 */}
+              {/* Ejemplo 3 */}
               <div className="space-y-3">
-                <h4 className="font-semibold text-foreground">Example 3: Multimedia Search</h4>
-                <div className="rounded-lg bg-black/30 border border-white/10 p-4 font-mono text-sm">
-                  <p className="text-blue-400">
-                    1. Go to Multimedia Search
-                  </p>
-                  <p className="text-blue-400">
-                    2. Upload an image (landscape.jpg)
-                  </p>
-                  <p className="text-blue-400">3. Click "Find Similar"</p>
-                  <p className="text-green-400">
-                    Result: Grid of similar images with similarity scores
-                  </p>
+                <h4 className="font-semibold text-foreground">Ejemplo 3: Comparar Métodos de Búsqueda</h4>
+                <div className="rounded-lg bg-black/30 border border-white/10 p-4 font-mono text-sm space-y-1">
+                  <p className="text-blue-400">1. Construye un índice multimedia (ver Ejemplo 2)</p>
+                  <p className="text-blue-400">2. Ve a la pestaña "Compare Methods"</p>
+                  <p className="text-blue-400">3. Sube una imagen/audio de consulta</p>
+                  <p className="text-blue-400">4. Top-K: 10</p>
+                  <p className="text-blue-400">5. Haz clic en "Compare Methods"</p>
+                  <p className="text-green-400">✓ Resultado: Tabla comparativa con tiempos de ejecución</p>
+                  <p className="text-green-400">  - Sequential: tiempo de búsqueda secuencial</p>
+                  <p className="text-green-400">  - Indexed: tiempo con índice invertido</p>
+                  <p className="text-green-400">  - Speedup: cuánto más rápido es el índice</p>
                 </div>
               </div>
 
-              {/* Example 4 */}
+              {/* Ejemplo 4 */}
               <div className="space-y-3">
-                <h4 className="font-semibold text-foreground">Example 4: Performance Comparison</h4>
-                <div className="rounded-lg bg-black/30 border border-white/10 p-4 font-mono text-sm">
-                  <p className="text-blue-400">
-                    1. Go to Performance & Benchmark
-                  </p>
-                  <p className="text-blue-400">2. Select "Text Retrieval" tab</p>
-                  <p className="text-blue-400">
-                    3. View SPIMI vs PostgreSQL comparison
-                  </p>
-                  <p className="text-green-400">
-                    Result: Graphs showing time and precision tradeoffs
-                  </p>
+                <h4 className="font-semibold text-foreground">Ejemplo 4: Búsqueda de Audio Similar</h4>
+                <div className="rounded-lg bg-black/30 border border-white/10 p-4 font-mono text-sm space-y-1">
+                  <p className="text-blue-400">1. Prepara un ZIP con archivos .wav o .mp3</p>
+                  <p className="text-blue-400">2. Ve a "Multimedia Search" → "Build Index"</p>
+                  <p className="text-blue-400">3. Sube el ZIP de audios</p>
+                  <p className="text-blue-400">4. K: 150 (vocabulario acústico)</p>
+                  <p className="text-blue-400">5. Build Index</p>
+                  <p className="text-blue-400">6. En "Search", sube un audio de consulta</p>
+                  <p className="text-green-400">✓ Resultado: Lista de audios similares con reproductores</p>
                 </div>
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
 
-        {/* Queries Tab */}
-        <TabsContent value="queries" className="space-y-6 animate-fade-in">
-          <Card className="glass-card border-white/10">
+          {/* Tips */}
+          <Card className="glass-card border-white/10 bg-gradient-to-br from-blue-500/10 to-transparent">
             <CardHeader>
-              <CardTitle>SQL Query Reference</CardTitle>
-              <CardDescription>Common SQL patterns and syntax</CardDescription>
+              <CardTitle className="text-blue-400">💡 Consejos y Trucos</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {[
-                {
-                  title: "Simple SELECT",
-                  query: "SELECT * FROM table_name;",
-                  desc: "Retrieve all records from a table",
-                },
-                {
-                  title: "SELECT with WHERE",
-                  query: "SELECT * FROM cities WHERE population > 50000;",
-                  desc: "Filter records by condition",
-                },
-                {
-                  title: "SELECT with BETWEEN",
-                  query: "SELECT * FROM cities WHERE id BETWEEN 100 AND 500;",
-                  desc: "Range queries (uses indexes efficiently)",
-                },
-                {
-                  title: "SELECT with ORDER BY",
-                  query: "SELECT * FROM cities ORDER BY population DESC LIMIT 10;",
-                  desc: "Sort results and limit output",
-                },
-                {
-                  title: "INSERT Record",
-                  query:
-                    "INSERT INTO cities (id, name, population) VALUES (999, 'New City', 100000);",
-                  desc: "Add a new record",
-                },
-                {
-                  title: "DELETE Records",
-                  query: "DELETE FROM cities WHERE id > 1000;",
-                  desc: "Remove records matching condition",
-                },
-                {
-                  title: "CREATE INDEX",
-                  query: "CREATE INDEX btree ON cities (population);",
-                  desc: "Create a B-Tree index for faster queries",
-                },
-              ].map((item, idx) => (
-                <div
-                  key={idx}
-                  className="p-4 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
-                >
-                  <h4 className="font-semibold text-foreground mb-2">{item.title}</h4>
-                  <div className="bg-black/30 rounded p-2 mb-2 font-mono text-sm text-green-400 overflow-x-auto">
-                    {item.query}
-                  </div>
-                  <p className="text-xs text-muted-foreground">{item.desc}</p>
-                </div>
-              ))}
+            <CardContent className="space-y-2 text-sm text-muted-foreground">
+              <p>• <strong>Vocabulario pequeño (K=50-100):</strong> Rápido pero menos preciso. Bueno para pruebas.</p>
+              <p>• <strong>Vocabulario grande (K=300-500):</strong> Más lento pero resultados más precisos.</p>
+              <p>• <strong>CSV con muchas columnas:</strong> El sistema concatenará todas las columnas (excepto ID) si no encuentra "text".</p>
+              <p>• <strong>Imágenes idénticas:</strong> Deberían tener ~100% de similitud. Si no, reconstruye el índice.</p>
+              <p>• <strong>Speedup bajo:</strong> Normal con pocos documentos. El índice brilla con datasets grandes (&gt;1000 items).</p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -304,29 +311,29 @@ export function HelpDocumentation() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <ExternalLink className="h-5 w-5 text-primary" />
-                Resources & Links
+                Recursos y Enlaces
               </CardTitle>
-              <CardDescription>External documentation and project links</CardDescription>
+              <CardDescription>Documentación externa y referencias del proyecto</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {[
                 {
                   icon: Github,
-                  title: "GitHub Repository",
-                  desc: "Access the source code and project documentation",
+                  title: "Repositorio GitHub",
+                  desc: "Código fuente completo del proyecto y documentación técnica",
                   link: "https://github.com/MarcoMadridG27/Proyecto-Base2",
                 },
                 {
-                  icon: BookOpen,
-                  title: "Project Report",
-                  desc: "Full project specification and requirements (Proyecto 2)",
-                  link: "#",
+                  icon: Code2,
+                  title: "Documentación de la API",
+                  desc: "Endpoints del backend, formatos de request/response y ejemplos interactivos",
+                  link: "http://localhost:8000/docs",
                 },
                 {
-                  icon: Code2,
-                  title: "API Documentation",
-                  desc: "Backend API endpoints and request/response formats",
-                  link: "http://localhost:8000/docs",
+                  icon: BookOpen,
+                  title: "Informe del Proyecto",
+                  desc: "Especificación completa, arquitectura del sistema y análisis de rendimiento",
+                  link: "#",
                 },
               ].map((resource, idx) => {
                 const Icon = resource.icon
@@ -356,35 +363,66 @@ export function HelpDocumentation() {
             </CardContent>
           </Card>
 
+          {/* FAQ */}
+          <Card className="glass-card border-white/10">
+            <CardHeader>
+              <CardTitle>Preguntas Frecuentes (FAQ)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {[
+                {
+                  q: "¿Por qué mis imágenes no se muestran en los resultados?",
+                  a: "Asegúrate de haber reconstruido el índice después de subir el ZIP. Si el problema persiste, verifica que las imágenes estén en formatos soportados (.jpg, .png, .bmp).",
+                },
+                {
+                  q: "¿Qué significa el 'speedup' en la comparación de métodos?",
+                  a: "Es cuántas veces más rápido es el método indexado comparado con el secuencial. Por ejemplo, speedup=10x significa que el índice es 10 veces más rápido.",
+                },
+                {
+                  q: "¿Puedo buscar con una imagen que no está en el índice?",
+                  a: "Sí, puedes subir cualquier imagen como consulta. El sistema extraerá sus características y buscará las más similares en el índice.",
+                },
+                {
+                  q: "¿Por qué la similitud de imágenes idénticas no es 100%?",
+                  a: "Puede deberse a la normalización o al tamaño del vocabulario (K). Intenta reconstruir el índice con K más grande (ej: K=500).",
+                },
+                {
+                  q: "¿Cómo funciona la búsqueda de texto si mi consulta tiene palabras que no están en los documentos?",
+                  a: "El sistema usa stemming (raíces de palabras) y TF-IDF. Si ninguna palabra coincide, no habrá resultados. Intenta con sinónimos o términos más generales.",
+                },
+              ].map((faq, idx) => (
+                <div key={idx} className="p-4 rounded-lg border border-white/10 bg-white/5">
+                  <h4 className="font-semibold text-foreground mb-2">❓ {faq.q}</h4>
+                  <p className="text-sm text-muted-foreground">{faq.a}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
           {/* Contact & Support */}
           <Card className="glass-card border-white/10 bg-gradient-to-br from-primary/10 to-secondary/10">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <HelpCircle className="h-5 w-5 text-primary" />
-                Need Help?
+                ¿Necesitas Ayuda?
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-foreground mb-4">
-                For issues, feature requests, or questions about the system, please:
+                Si tienes problemas, sugerencias o preguntas sobre el sistema:
               </p>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p>
-                  • Check this Help section for common questions and examples
-                </p>
-                <p>
-                  • Visit the GitHub repository and create an issue
-                </p>
-                <p>
-                  • Review the project documentation and API docs
-                </p>
-                <p>
-                  • Contact the development team for urgent support
-                </p>
+                <p>• Revisa esta sección de Ayuda para preguntas comunes</p>
+                <p>• Consulta la documentación de la API en /docs</p>
+                <p>• Visita el repositorio de GitHub y crea un issue</p>
+                <p>• Contacta al equipo de desarrollo para soporte urgente</p>
               </div>
-              <Button className="mt-6 w-full bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80 text-primary-foreground shadow-lg shadow-primary/30">
+              <Button
+                className="mt-6 w-full bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80 text-primary-foreground shadow-lg shadow-primary/30"
+                onClick={() => window.open("https://github.com/MarcoMadridG27/Proyecto-Base2", "_blank")}
+              >
                 <Github className="h-4 w-4 mr-2" />
-                Visit GitHub Repository
+                Visitar Repositorio en GitHub
               </Button>
             </CardContent>
           </Card>

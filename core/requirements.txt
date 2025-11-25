@@ -5,9 +5,22 @@ pyparsing==3.1.2        # opcional, si usas parser basado en pyparsing
 numpy==1.26.4           # útil para cálculos, RTree simple o métricas
 rtree==1.3.0            # binding de libspatialindex, para RTree real
 pandas==2.2.2           # para cargar CSV en pruebas
+
+# === Text Search (Proyecto 2) ===
+nltk==3.8.1             # Natural Language Toolkit para preprocesamiento de texto
+
+# === Multimedia Search (Proyecto 2) ===
+opencv-python==4.9.0.80 # Procesamiento de imágenes (SIFT)
+librosa==0.10.1         # Procesamiento de audio (MFCC)
+scikit-learn==1.4.2     # Machine Learning (K-Means, PCA)
+
+# === PostgreSQL (Comparación) ===
+psycopg2-binary==2.9.9  # PostgreSQL adapter for Python
+
 # === API Backend ===
 fastapi==0.115.0
 uvicorn[standard]==0.30.3
+
 # === Frontend ===
 tk==0.1.0               # si usas Tkinter (normalmente ya viene con Python)
 PyQt5==5.15.11          # si prefieres Qt (opcional)
