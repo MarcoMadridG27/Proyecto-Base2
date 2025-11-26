@@ -50,19 +50,19 @@ class SPIMIIndexer:
         self.avg_doc_length = 0
         self.vocabulary: Set[str] = set()
         
-    def build_block(self, documents: List[Tuple[int, str]]) -> Dict[str, Dict[int, int]]:
+    def build_block(self, documents: List[Tuple[int, str, Dict]]) -> Dict[str, Dict[int, int]]:
         """
         Build a partial inverted index for a block of documents.
         
         Args:
-            documents: List of (doc_id, text) tuples
+            documents: List of (doc_id, text, metadata) tuples
             
         Returns:
             Partial index: term -> {doc_id: term_frequency}
         """
         block_index = defaultdict(lambda: defaultdict(int))
         
-        for doc_id, text in documents:
+        for doc_id, text, metadata in documents:
             # Preprocess text
             tokens = self.preprocessor.preprocess(text)
             
@@ -74,7 +74,8 @@ class SPIMIIndexer:
             self.doc_metadata[doc_id] = {
                 'length': len(tokens),
                 'unique_terms': len(set(tokens)),
-                'text': text  # Store original text for display
+                'text': text,  # Store original text for display
+                **metadata     # Merge provided metadata
             }
         
         return block_index
@@ -156,12 +157,12 @@ class SPIMIIndexer:
             if doc_id in self.doc_metadata:
                 self.doc_metadata[doc_id]['norm'] = math.sqrt(norm_squared)
     
-    def build_index(self, documents: List[Tuple[int, str]]):
+    def build_index(self, documents: List[Tuple[int, str, Dict]]):
         """
         Build complete inverted index from documents using SPIMI.
         
         Args:
-            documents: List of (doc_id, text) tuples
+            documents: List of (doc_id, text, metadata) tuples
         """
         print(f"Building index for {len(documents)} documents...")
         

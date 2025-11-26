@@ -8,6 +8,7 @@ import os
 import shutil
 import time
 import zipfile
+import numpy as np
 
 from src.multimedia_search.feature_extractor import FeatureExtractor
 from src.multimedia_search.codebook import Codebook
@@ -29,7 +30,7 @@ def register_multimedia_routes(app, DATA_DIR):
     app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
     
     @app.post("/multimedia/build_index")
-    async def build_multimedia_index(
+    def build_multimedia_index(
         file: UploadFile = File(...),
         k: int = Form(100),
         index_name: str = Form("default"),
@@ -82,7 +83,11 @@ def register_multimedia_routes(app, DATA_DIR):
             audio_extensions = ('.wav', '.mp3', '.flac', '.ogg', '.m4a')
             
             descriptors_list = []
-            for path in media_files:
+            total_files = len(media_files)
+            for i, path in enumerate(media_files):
+                if i % 100 == 0:
+                    print(f"Processing file {i+1}/{total_files}: {os.path.basename(path)}")
+                    
                 if path.lower().endswith(image_extensions):
                     desc = mm_extractor.extract_image_features(path)
                 elif path.lower().endswith(audio_extensions):
@@ -127,7 +132,14 @@ def register_multimedia_routes(app, DATA_DIR):
                 # Recompute histograms with TF-IDF
                 all_histograms = []
                 for path in valid_paths:
-                    desc = mm_extractor.extract_image_features(path)
+                    # Detect file type and extract features
+                    if path.lower().endswith(image_extensions):
+                        desc = mm_extractor.extract_image_features(path)
+                    elif path.lower().endswith(audio_extensions):
+                        desc = mm_extractor.extract_audio_features(path)
+                    else:
+                        continue
+                        
                     if desc is not None:
                         hist = mm_codebook.compute_histogram(desc, use_tfidf=True)
                         all_histograms.append(hist)
@@ -169,7 +181,7 @@ def register_multimedia_routes(app, DATA_DIR):
             return {"ok": False, "error": str(e)}
 
     @app.post("/multimedia/search")
-    async def search_multimedia(
+    def search_multimedia(
         file: UploadFile = File(...),
         top_k: int = Form(5),
         index_name: str = Form("default")
@@ -222,7 +234,12 @@ def register_multimedia_routes(app, DATA_DIR):
                 return {"ok": False, "error": "Could not extract features from query image"}
                 
             hist = mm_codebook.compute_histogram(desc)
+            print(f"Query histogram sum: {np.sum(hist)}")
+            print(f"Query histogram non-zero elements: {np.count_nonzero(hist)}")
+            
             results = mm_index.search_sequential(hist, k=top_k)
+            print(f"Found {len(results)} results")
+            
             search_time = time.time() - start_time
             
             # Clean up
@@ -267,7 +284,7 @@ def register_multimedia_routes(app, DATA_DIR):
             return {"ok": False, "error": str(e)}
 
     @app.post("/multimedia/compare_methods")
-    async def compare_search_methods(
+    def compare_search_methods(
         file: UploadFile = File(...),
         top_k: int = Form(5),
         index_name: str = Form("default")

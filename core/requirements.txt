@@ -13,6 +13,7 @@ nltk==3.8.1             # Natural Language Toolkit para preprocesamiento de text
 opencv-python==4.9.0.80 # Procesamiento de imágenes (SIFT)
 librosa==0.10.1         # Procesamiento de audio (MFCC)
 scikit-learn==1.4.2     # Machine Learning (K-Means, PCA)
+setuptools              # Required for pkg_resources (used by librosa dependencies)
 
 # === PostgreSQL (Comparación) ===
 psycopg2-binary==2.9.9  # PostgreSQL adapter for Python

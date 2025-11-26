@@ -34,7 +34,7 @@ def register_text_search_routes(app, DATA_DIR):
     """Register text search endpoints to the FastAPI app"""
     
     @app.post("/text/build_index")
-    async def build_text_index(
+    def build_text_index(
         file: UploadFile = File(...),
         index_name: str = Form("default"),
         block_size: int = Form(1000)
@@ -62,36 +62,40 @@ def register_text_search_routes(app, DATA_DIR):
                 reader = csv.DictReader(f)
                 for idx, row in enumerate(reader):
                     # Try to find ID column
-                    doc_id = None
-                    if 'doc_id' in row and row['doc_id']:
-                        try:
-                            doc_id = int(row['doc_id'])
-                        except ValueError:
-                            pass
-                    if doc_id is None and 'id' in row and row['id']:
-                        try:
-                            doc_id = int(row['id'])
-                        except ValueError:
-                            pass
-                    # Fallback to row index (0-based)
-                    if doc_id is None:
-                        doc_id = idx
-                        
-                    # Try to find text content
-                    if 'text' in row:
-                        text = row['text']
-                    elif 'content' in row:
-                        text = row['content']
+                    doc_id = idx  # Default to 0-based index for internal integer ID
+                    
+                    # Identify text column candidates
+                    text_candidates = ['lyrics', 'text', 'content', 'body', 'description', 'review', 'comment', 'message', 'overview', 'summary']
+                    text_column = None
+                    
+                    # 1. Try to find a standard text column
+                    for cand in text_candidates:
+                        # Case-insensitive check
+                        found_col = next((k for k in row.keys() if k.lower() == cand), None)
+                        if found_col:
+                            text_column = found_col
+                            break
+                    
+                    text = ""
+                    if text_column:
+                        text = row[text_column]
                     else:
-                        # Fallback: Concatenate all columns except ID-like ones
+                        # 2. Fallback: Concatenate all columns that look like text (not IDs)
                         text_parts = []
                         for k, v in row.items():
-                            if k.lower() not in ('id', 'doc_id', 'index'):
+                            if 'id' not in k.lower() and 'index' not in k.lower() and 'url' not in k.lower():
                                 text_parts.append(str(v))
                         text = " ".join(text_parts)
+                    
+                    # Extract metadata: Store ALL columns as metadata
+                    metadata = row.copy()
+                    
+                    # Ensure we have the original text column content if we used one
+                    if text_column:
+                        metadata['__text_col'] = text_column
                         
                     if text.strip():
-                        documents.append((doc_id, text))
+                        documents.append((doc_id, text, metadata))
             
             if not documents:
                 return {"ok": False, "error": "No documents found in CSV"}
@@ -121,7 +125,7 @@ def register_text_search_routes(app, DATA_DIR):
             return {"ok": False, "error": str(e)}
     
     @app.post("/text/search")
-    async def search_text(request: TextSearchRequest):
+    def search_text(request: TextSearchRequest):
         """
         Search using custom SPIMI index.
         """
@@ -140,17 +144,26 @@ def register_text_search_routes(app, DATA_DIR):
             for rank, (doc_id, score) in enumerate(results, 1):
                 # Get document text from metadata
                 doc_text = ""
+                metadata = {}
                 if doc_id in text_indexer.doc_metadata:
-                    doc_text = text_indexer.doc_metadata[doc_id].get('text', '')
+                    doc_meta = text_indexer.doc_metadata[doc_id]
+                    doc_text = doc_meta.get('text', '')
                     # Truncate to first 200 characters for preview
                     if len(doc_text) > 200:
                         doc_text = doc_text[:200] + "..."
+                    
+                    # Extract extra metadata dynamically
+                    system_fields = ['length', 'unique_terms', 'text', 'norm']
+                    for k, v in doc_meta.items():
+                        if k not in system_fields:
+                            metadata[k] = v
                 
                 formatted_results.append({
                     "rank": rank,
                     "doc_id": doc_id,
                     "score": score,
-                    "text": doc_text
+                    "text": doc_text,
+                    **metadata
                 })
             
             return {
@@ -166,7 +179,7 @@ def register_text_search_routes(app, DATA_DIR):
             return {"ok": False, "error": str(e)}
     
     @app.post("/text/postgres/setup")
-    async def setup_postgres(
+    def setup_postgres(
         host: str = Form("localhost"),
         database: str = Form("proyecto_bd2"),
         user: str = Form("postgres"),
@@ -207,7 +220,7 @@ def register_text_search_routes(app, DATA_DIR):
             return {"ok": False, "error": str(e)}
     
     @app.post("/text/postgres/load_data")
-    async def load_data_postgres(
+    def load_data_postgres(
         file: UploadFile = File(...)
     ):
         """
@@ -262,7 +275,7 @@ def register_text_search_routes(app, DATA_DIR):
             return {"ok": False, "error": str(e)}
     
     @app.post("/text/postgres/search")
-    async def search_postgres(request: TextSearchRequest):
+    def search_postgres(request: TextSearchRequest):
         """
         Search using PostgreSQL tsvector/tsquery.
         """
@@ -287,7 +300,7 @@ def register_text_search_routes(app, DATA_DIR):
             return {"ok": False, "error": str(e)}
     
     @app.post("/text/compare")
-    async def compare_text_search(request: TextSearchRequest):
+    def compare_text_search(request: TextSearchRequest):
         """
         Compare custom index vs PostgreSQL for text search.
         """

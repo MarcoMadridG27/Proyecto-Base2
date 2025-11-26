@@ -70,6 +70,10 @@ class FeatureExtractor:
             # Load audio file
             y, sr = librosa.load(audio_path, sr=None)
             
+            if y is None or len(y) == 0:
+                print(f"Warning: Empty or invalid audio file {audio_path}")
+                return None
+            
             # Extract MFCCs
             # Result shape: (n_mfcc, n_frames)
             mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)

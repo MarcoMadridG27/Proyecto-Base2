@@ -44,7 +44,14 @@ class KNNIndex:
             # d(x,y) = 0.5 * sum((xi-yi)^2 / (xi+yi+eps))
             numerator = (query_vector - vector) ** 2
             denominator = query_vector + vector + eps
-            dist = 0.5 * np.sum(numerator / denominator)
+            
+            # Avoid division by zero where denominator is very small
+            # This can happen if both vectors have 0 at the same index
+            valid_mask = denominator > eps
+            
+            dist = 0.0
+            if np.any(valid_mask):
+                dist = 0.5 * np.sum(numerator[valid_mask] / denominator[valid_mask])
             
             # Maintain top-k smallest distances using a max-heap of size k
             # We store (-dist, ...) because heapq is a min-heap

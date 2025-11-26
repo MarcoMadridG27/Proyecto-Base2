@@ -1,0 +1,26 @@
+Extracting features from 10 files...
+Processing file 1/10: 000002.mp3
+C:\Users\ASUS\proyecto-base4\.venv\Lib\site-packages\librosa\core\intervals.py:8: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_filename
+Training codebook with k=100...
+Training codebook with 25832 descriptors...
+Codebook trained with 100 clusters
+Computing histograms...
+Building IDF weights...
+IDF built for 10 documents
+Error: Could not read image C:\Users\ASUS\proyecto-base4\core\data\mm_index_10songs\media\000002.mp3
+Error: Could not read image C:\Users\ASUS\proyecto-base4\core\data\mm_index_10songs\media\000005.mp3
+Error: Could not read image C:\Users\ASUS\proyecto-base4\core\data\mm_index_10songs\media\000010.mp3
+Error: Could not read image C:\Users\ASUS\proyecto-base4\core\data\mm_index_10songs\media\000140.mp3
+Error: Could not read image C:\Users\ASUS\proyecto-base4\core\data\mm_index_10songs\media\000141.mp3
+Error: Could not read image C:\Users\ASUS\proyecto-base4\core\data\mm_index_10songs\media\000148.mp3
+Error: Could not read image C:\Users\ASUS\proyecto-base4\core\data\mm_index_10songs\media\000182.mp3
+Error: Could not read image C:\Users\ASUS\proyecto-base4\core\data\mm_index_10songs\media\000190.mp3
+Error: Could not read image C:\Users\ASUS\proyecto-base4\core\data\mm_index_10songs\media\000193.mp3
+Error: Could not read image C:\Users\ASUS\proyecto-base4\core\data\mm_index_10songs\media\000194.mp3
+Codebook saved to C:\Users\ASUS\proyecto-base4\core\data\mm_index_10songs\codebook.pkl
+Building KNN sequential index...
+Index saved to C:\Users\ASUS\proyecto-base4\core\data\mm_index_10songs\index.pkl
+Building inverted index...
+Inverted index saved to C:\Users\ASUS\proyecto-base4\core\data\mm_index_10songs\inverted_index.pkl
+INFO:     127.0.0.1:62631 - "POST /multimedia/build_index HTTP/1.1" 200 OK
