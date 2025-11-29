@@ -1,0 +1,9 @@
+Testing Debug Persistence...
+
+--- Indexer 1 ---
+Vocab offset: 0
+Postings: [[1, 0.0]]
+
+--- Indexer 2 (Loaded) ---
+Vocab offset: 0
+Postings: [[1, 0.0]]

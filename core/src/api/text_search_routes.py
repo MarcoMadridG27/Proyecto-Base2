@@ -64,35 +64,18 @@ def register_text_search_routes(app, DATA_DIR):
                     # Try to find ID column
                     doc_id = idx  # Default to 0-based index for internal integer ID
                     
-                    # Identify text column candidates
-                    text_candidates = ['lyrics', 'text', 'content', 'body', 'description', 'review', 'comment', 'message', 'overview', 'summary']
-                    text_column = None
+                    # Concatenate all textual fields into a single block
+                    text_parts = []
+                    for k, v in row.items():
+                        # Filter out IDs, indexes, and URLs to keep only meaningful text
+                        k_lower = k.lower()
+                        if 'id' not in k_lower and 'index' not in k_lower and 'url' not in k_lower:
+                            text_parts.append(str(v))
                     
-                    # 1. Try to find a standard text column
-                    for cand in text_candidates:
-                        # Case-insensitive check
-                        found_col = next((k for k in row.keys() if k.lower() == cand), None)
-                        if found_col:
-                            text_column = found_col
-                            break
-                    
-                    text = ""
-                    if text_column:
-                        text = row[text_column]
-                    else:
-                        # 2. Fallback: Concatenate all columns that look like text (not IDs)
-                        text_parts = []
-                        for k, v in row.items():
-                            if 'id' not in k.lower() and 'index' not in k.lower() and 'url' not in k.lower():
-                                text_parts.append(str(v))
-                        text = " ".join(text_parts)
+                    text = " ".join(text_parts)
                     
                     # Extract metadata: Store ALL columns as metadata
                     metadata = row.copy()
-                    
-                    # Ensure we have the original text column content if we used one
-                    if text_column:
-                        metadata['__text_col'] = text_column
                         
                     if text.strip():
                         documents.append((doc_id, text, metadata))
@@ -243,7 +226,13 @@ def register_text_search_routes(app, DATA_DIR):
                 reader = csv.DictReader(f)
                 for row in reader:
                     doc_id = int(row.get('doc_id', row.get('id', 0)))
-                    text = row.get('text', row.get('content', ''))
+                    # Concatenate all textual fields
+                    text_parts = []
+                    for k, v in row.items():
+                        k_lower = k.lower()
+                        if 'id' not in k_lower and 'index' not in k_lower and 'url' not in k_lower:
+                            text_parts.append(str(v))
+                    text = " ".join(text_parts)
                     documents.append({'doc_id': doc_id, 'text': text})
             
             os.remove(temp_path)
