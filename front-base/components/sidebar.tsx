@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Upload, Database, Network, Map, GraduationCap, Search, Image, BarChart3, HelpCircle } from "lucide-react"
+import { LayoutDashboard, Upload, Database, Network, Map, GraduationCap, Search, Image, BarChart3, HelpCircle, Music } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navigation = [
@@ -15,6 +15,7 @@ const navigation = [
   { name: "Multimedia Search", href: "/multimedia-search", icon: Image },
   { name: "Performance", href: "/performance", icon: BarChart3 },
   { name: "Help", href: "/help", icon: HelpCircle },
+  { name: "Audio Search", href: "/audio-search", icon: Music },
 ]
 
 export function Sidebar() {

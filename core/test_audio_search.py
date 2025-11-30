@@ -89,11 +89,7 @@ def main():
                 'top_result_sim': result["indexed"]["results"][0]["similarity"] if result["indexed"]["results"] else 0
             })
             
-            print(f"   ⏱️ Secuencial: {result['sequential']['time_seconds']:.4f}s")
-            print(f"   ⏱️ Indexado:   {result['indexed']['time_seconds']:.4f}s")
-            print(f"   🚀 Speedup:    {result['speedup']:.2f}x")
-            print(f"   🎯 Top Similitud: {result['indexed']['results'][0]['similarity']:.2%}")
-
+            
     if results:
         # Visualizar resultados
         try:

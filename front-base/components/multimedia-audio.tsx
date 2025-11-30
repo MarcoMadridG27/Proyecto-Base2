@@ -429,9 +429,14 @@ function MultimediaSearch({
                         <div>
                           <p className="text-xs text-muted-foreground">Execution Time</p>
                           <p className="text-2xl font-bold text-primary">
-                            {metrics?.execution_time
+                            {metrics?.execution_time !== undefined &&
+                             metrics?.execution_time !== null &&
+                             !isNaN(metrics.execution_time) &&
+                             metrics.execution_time > 0
                               ? metrics.execution_time.toFixed(2) + "ms"
-                              : "N/A"}
+                              : results.length > 0
+                                ? "Calculating..."
+                                : "N/A"}
                           </p>
                         </div>
                         <Clock className="h-8 w-8 text-primary/50" />

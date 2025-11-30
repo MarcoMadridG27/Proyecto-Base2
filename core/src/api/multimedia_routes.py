@@ -1,7 +1,3 @@
-"""
-Multimedia Search Endpoints for FastAPI
-"""
-
 from fastapi import UploadFile, File, Form
 from typing import Optional
 import os
@@ -9,6 +5,12 @@ import shutil
 import time
 import zipfile
 import numpy as np
+import csv
+import re
+import ast
+import numpy as np
+import librosa
+from typing import Optional
 
 from src.multimedia_search.feature_extractor import FeatureExtractor
 from src.multimedia_search.codebook import Codebook
@@ -21,6 +23,36 @@ mm_codebook: Optional[Codebook] = None
 mm_index: Optional[KNNIndex] = None
 mm_inverted_index: Optional[VisualInvertedIndex] = None
 
+# Add audio-specific globals
+mm_codebook_audio: Optional[Codebook] = None
+mm_index_audio: Optional[KNNIndex] = None
+mm_inverted_index_audio: Optional[VisualInvertedIndex] = None
+
+# Almacena los MFCCs originales en memoria para búsqueda exhaustiva
+audio_index_vectors = []
+audio_index_paths = []
+
+def extract_audio_features(filepath, n_mfcc=50):
+    y, sr = librosa.load(filepath, sr=None)
+    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)
+    mfcc_mean = np.mean(mfcc, axis=1).astype(np.float32)
+    return mfcc_mean  # shape: (n_mfcc,)
+
+def _parse_vector_string(s: str):
+    """Robust parser for vectors like '[1.23 4.56 -7.8]' or '[1.0,2.0,...]'"""
+    # Limpia saltos de línea y espacios extra
+    s = s.replace('\n', ' ').replace('\r', ' ').replace('  ', ' ').strip()
+    # Elimina comillas si existen
+    if s.startswith('"') and s.endswith('"'):
+        s = s[1:-1]
+    # Busca números with regex
+    vals = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", s)
+    if not vals:
+        return None
+    arr = np.array([float(x) for x in vals], dtype=np.float32)
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    return arr
 
 def register_multimedia_routes(app, DATA_DIR):
     """Register multimedia search endpoints to the FastAPI app"""
@@ -36,15 +68,7 @@ def register_multimedia_routes(app, DATA_DIR):
         index_name: str = Form("default"),
         use_tfidf: bool = Form(True)
     ):
-        """
-        Build multimedia index from a ZIP file containing images.
-        1. Extract ZIP
-        2. Extract features (SIFT/ORB)
-        3. Train Codebook (K-Means)
-        4. Build TF-IDF weights
-        5. Build KNN Index (sequential)
-        6. Build Inverted Index (indexed)
-        """
+        
         global mm_codebook, mm_index, mm_inverted_index
         
         try:
@@ -289,10 +313,7 @@ def register_multimedia_routes(app, DATA_DIR):
         top_k: int = Form(5),
         index_name: str = Form("default")
     ):
-        """
-        Compare sequential vs indexed search methods.
-        Returns timing and results for both approaches.
-        """
+        
         global mm_codebook, mm_index, mm_inverted_index
         
         try:
@@ -375,3 +396,137 @@ def register_multimedia_routes(app, DATA_DIR):
             import traceback
             traceback.print_exc()
             return {"ok": False, "error": str(e)}
+
+    # -----------------------
+    # AUDIO-SPECIFIC ENDPOINTS
+    # -----------------------
+    @app.post("/multimedia/audio/build_index")
+    def build_audio_index(
+        file: Optional[UploadFile] = File(None),
+        k: int = Form(50),
+        index_name: str = Form("default"),
+        use_tfidf: bool = Form(True),
+        csv_encoding: str = Form("utf-8"),
+        use_server_csv: bool = Form(False),
+    ):
+        global audio_index_vectors, audio_index_paths
+
+        try:
+            base_dir = os.path.join(DATA_DIR, f"mm_index_{index_name}")
+            media_dir = os.path.join(base_dir, "media")
+            os.makedirs(media_dir, exist_ok=True)
+
+            csv_path = os.path.join(base_dir, "audio_dataset.csv")
+
+            # If file uploaded -> save; else if use_server_csv -> expect csv already at csv_path
+            if file is not None:
+                print(f"[AUDIO BUILD] Uploading CSV file...")
+                with open(csv_path, "wb") as buffer:
+                    shutil.copyfileobj(file.file, buffer)
+            else:
+                if not (use_server_csv and os.path.exists(csv_path)):
+                    return {
+                        "ok": False,
+                        "error": f"No CSV uploaded and no server CSV found at {csv_path}. Either upload a CSV or place audio_dataset.csv in the index directory."
+                    }
+                print(f"[AUDIO BUILD] Using server CSV from: {csv_path}")
+
+            # Detect delimiter and open CSV safely
+            print(f"[AUDIO BUILD] Parsing CSV from: {csv_path}")
+            with open(csv_path, "r", encoding=csv_encoding, errors="ignore") as fh:
+                reader = csv.DictReader(fh, delimiter=",")
+                audio_index_vectors = []
+                audio_index_paths = []
+                for row_idx, row in enumerate(reader):
+                    # Admite columnas con nombres diferentes y vector en formato CSV
+                    vector_field = None
+                    for key in row.keys():
+                        if key.strip().lower() in ["mfcc_vector", "mfcc", "mfccvector"]:
+                            vector_field = row[key]
+                            break
+                    mp3_field = row.get("mp3") or row.get("mp3_path") or row.get("audio") or row.get("file")
+                    if vector_field is None or not vector_field.strip():
+                        continue
+                    # Si el vector está entre comillas y separado por comas, lo parsea igual
+                    arr = _parse_vector_string(vector_field)
+                    if arr is None:
+                        continue
+                    mfcc_vec = arr.flatten().astype(np.float32)
+                    audio_index_vectors.append(mfcc_vec)
+                    audio_index_paths.append(mp3_field or f"track_{row_idx}")
+            
+            return {
+                "ok": True,
+                "message": "Audio index built from CSV",
+                "stats": {
+                    "num_records": len(audio_index_vectors),
+                    "indexed_files": len(audio_index_paths),
+                    "vocabulary_size": k
+                }
+            }
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {"ok": False, "error": str(e)}
+
+    @app.post("/multimedia/audio/search")
+    def search_audio(
+        file: UploadFile = File(...),
+        top_k: int = Form(5),
+        index_name: str = Form("default")
+    ):
+        import librosa
+        global audio_index_vectors, audio_index_paths
+
+        if not audio_index_vectors or not audio_index_paths:
+            return {"ok": False, "error": "No index loaded. Build the audio index first."}
+
+        temp_path = os.path.join(DATA_DIR, f"temp_audio_query_{file.filename}")
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        try:
+            duration = librosa.get_duration(path=temp_path)
+        except Exception:
+            duration = None
+
+        query_vec = extract_audio_features(temp_path, n_mfcc=50)
+        os.remove(temp_path)
+        if query_vec is None:
+            return {"ok": False, "error": "Could not extract features from query audio."}
+
+        # --- Medir tiempo de búsqueda ---
+        start_time = time.time()
+        dists = []
+        for idx, vec in enumerate(audio_index_vectors):
+            dist = np.linalg.norm(query_vec - vec)
+            dists.append((dist, idx))
+        dists.sort(key=lambda x: x[0])
+        results = []
+        for rank, (dist, idx) in enumerate(dists[:top_k], 1):
+            similarity = max(0.0, 1.0 - dist / (np.linalg.norm(query_vec) + 1e-8))
+            result_path = os.path.join(DATA_DIR, "mm_index_" + index_name, "media", audio_index_paths[idx])
+            try:
+                result_duration = librosa.get_duration(path=result_path)
+            except Exception:
+                result_duration = None
+            results.append({
+                "rank": rank,
+                "filename": audio_index_paths[idx],
+                "distance": float(dist),
+                "similarity": similarity,
+                "duration": result_duration
+            })
+        end_time = time.time()
+        search_time_seconds = end_time - start_time
+        # --- Fin medición ---
+
+        return {
+            "ok": True,
+            "results": results,
+            "query_audio": {
+                "filename": file.filename,
+                "duration": duration
+            },
+            "search_time_seconds": search_time_seconds
+        }
