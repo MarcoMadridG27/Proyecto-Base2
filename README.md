@@ -7,8 +7,6 @@
 | Marco Madrid | 202320053  |
 | Henry Quispe | 202320078 |
 | Maria Surco | 202110358 |
-| Juan Inca | 202310363  |
-| Joaquin Huamán | 202210170 |
 
 # 🚀 Guía de Ejecución con Docker
 
@@ -539,22 +537,57 @@ Donde:
 
 ---
 
-# Experimentación
+# Experimentación y Resultados
 
-## Sequential
+En esta sección presentamos tanto la visualización de las estructuras de datos implementadas como los resultados de un experimento comparativo de rendimiento.
+
+## Visualización de Estructuras
+
+### Sequential
 ![](Images/Sequential.jpg)
-## Hash
+### Hash
 ![](Images/Hash.png)
-## BPlus Tree
+### BPlus Tree
 ![](Images/Btree.jpg)
-## ISAM
+### ISAM
 ![](Images/ISAM.png)
-## Rtree
-### Sin Indice
+### Rtree
+#### Sin Indice
 ![](Images/RtreeSinIndice.png)
 
-### RTree con Indice
+#### RTree con Indice
 ![](Images/RtreeConIndice.png)
+
+## Comparativa de Rendimiento: MyIndex vs Postgres
+
+Se realizó un experimento para comparar el rendimiento de nuestra implementación de índice ("MyIndex") frente a una implementación estándar en PostgreSQL ("Postgres"). El objetivo fue evaluar el tiempo de respuesta y la calidad de los resultados (Similarity Score) al incrementar el volumen de datos.
+
+### Descripción del Experimento
+
+Se utilizaron conjuntos de datos de tamaño variable, desde 1,000 (1k) hasta 128,000 (128k) registros. Se midieron dos métricas clave:
+1.  **Tiempo (ms):** Tiempo total de ejecución de la consulta.
+2.  **Similarity Score:** Puntuación de similitud del primer resultado obtenido.
+
+### Tabla de Resultados
+
+| Dataset Size | MyIndex Time (ms) | Postgres Time (ms) | MyIndex Score | Postgres Score |
+| :--- | :--- | :--- | :--- | :--- |
+| 1k | 6.22 | 11 | 0.1607 | 0.0560 |
+| 2k | 11.83 | 18 | 0.1580 | 0.0580 |
+| 4k | 12.15 | 26 | 0.2009 | 0.0617 |
+| 8k | 30.98 | 46 | 0.2183 | 0.0617 |
+| 16k | 36.83 | 98 | 0.2372 | 0.0617 |
+| 32k | 63.40 | 222 | 0.2400 | 0.0617 |
+| 64k | 154.95 | 752 | 0.4024 | 0.0617 |
+| 128k | 266.98 | 2450 | 0.3963 | 0.0665 |
+
+### Gráfico de Comparación
+
+![Comparación de Tiempos](Images/comparacion_tiempos.png)
+
+### Análisis
+
+Los resultados demuestran que **MyIndex** escala de manera mucho más eficiente que Postgres para este tipo de consultas específicas. A medida que el tamaño del dataset crece, la diferencia en tiempos de respuesta se hace más notable, llegando a ser MyIndex casi 10 veces más rápido en el caso de 128k registros. Además, los puntajes de similitud sugieren diferencias en la semántica de búsqueda o en la precisión de los resultados retornados.
 
 
 # 🧩 Conclusiones

@@ -104,7 +104,7 @@ core/data/test_*/catalog.json
 *.csv
 *.tar.gz
 *.rar
-
+songs/
 # ================================
 # 🐛 LOGS & DEBUG OUTPUT
 # ================================

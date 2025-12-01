@@ -1,12 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Search, Clock, Zap, BarChart3, Upload, FileText, Database } from "lucide-react"
+import { Search, Clock, Zap, BarChart3, Upload, FileText, Database, ChevronDown, ChevronUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -14,7 +14,8 @@ type SearchResult = {
   doc_id: number
   score: number
   rank: number
-  text?: string // Optional snippet if backend returns it
+  text?: string
+  [key: string]: any
 }
 
 type SearchMetrics = {
@@ -28,11 +29,34 @@ export function TextSearch() {
   const [results, setResults] = useState<SearchResult[]>([])
   const [metrics, setMetrics] = useState<SearchMetrics | null>(null)
   const [loading, setLoading] = useState(false)
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
 
   // Upload state
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
-  const [indexName, setIndexName] = useState("default")
+  const [uploadIndexName, setUploadIndexName] = useState("default")
+
+  // Search state
+  const [searchIndexName, setSearchIndexName] = useState("default")
+  const [availableIndices, setAvailableIndices] = useState<string[]>([])
+
+  // Fetch indices on mount
+  const fetchIndices = async () => {
+    try {
+      const response = await fetch("http://localhost:8000/text/indices")
+      const data = await response.json()
+      if (data.ok) {
+        setAvailableIndices(data.indices)
+      }
+    } catch (err) {
+      console.error("Failed to fetch indices:", err)
+    }
+  }
+
+  // Initial fetch
+  useEffect(() => {
+    fetchIndices()
+  }, [])
 
   const handleSearch = async () => {
     if (!query.trim()) {
@@ -41,13 +65,15 @@ export function TextSearch() {
     }
 
     setLoading(true)
+    setExpandedRows(new Set()) // Reset expansion
     try {
       const response = await fetch("http://localhost:8000/text/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: query,
-          top_k: topK
+          top_k: topK,
+          index_name: searchIndexName
         }),
       })
 
@@ -80,8 +106,7 @@ export function TextSearch() {
     setUploading(true)
     const formData = new FormData()
     formData.append("file", file)
-    formData.append("index_name", indexName)
-    // Backend expects specific column names (doc_id, text) or fallbacks (id, content)
+    formData.append("index_name", uploadIndexName)
 
     try {
       const response = await fetch("http://localhost:8000/text/build_index", {
@@ -93,6 +118,7 @@ export function TextSearch() {
 
       if (data.ok) {
         toast.success(`Index built successfully! ${data.stats.num_documents} documents indexed.`)
+        fetchIndices() // Refresh list
       } else {
         throw new Error(data.error || "Upload failed")
       }
@@ -101,6 +127,43 @@ export function TextSearch() {
       toast.error(err instanceof Error ? err.message : "Upload failed")
     } finally {
       setUploading(false)
+    }
+  }
+
+  const toggleRow = (rank: number) => {
+    const newExpanded = new Set(expandedRows)
+    if (newExpanded.has(rank)) {
+      newExpanded.delete(rank)
+    } else {
+      newExpanded.add(rank)
+    }
+    setExpandedRows(newExpanded)
+  }
+
+  // Drag and drop state
+  const [isDragging, setIsDragging] = useState(false)
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const droppedFile = e.dataTransfer.files[0]
+      if (droppedFile.name.endsWith('.csv')) {
+        setFile(droppedFile)
+      } else {
+        toast.error("Please upload a CSV file")
+      }
     }
   }
 
@@ -165,6 +228,21 @@ export function TextSearch() {
                     className="bg-white/5 border-white/10 text-foreground focus:border-primary focus:bg-white/10 transition-all"
                   />
                 </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Select Index</label>
+                  <select
+                    value={searchIndexName}
+                    onChange={(e) => setSearchIndexName(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="default" className="bg-background text-foreground">default</option>
+                    {availableIndices.filter(i => i !== 'default').map((idx) => (
+                      <option key={idx} value={idx} className="bg-background text-foreground">
+                        {idx}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -208,7 +286,7 @@ export function TextSearch() {
                 <CardHeader>
                   <CardTitle>Ranked Results</CardTitle>
                   <CardDescription>
-                    Documents ranked by Cosine Similarity
+                    Documents ranked by Cosine Similarity. Click row to view metadata.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -216,6 +294,7 @@ export function TextSearch() {
                     <Table>
                       <TableHeader>
                         <TableRow className="border-white/10 hover:bg-white/5">
+                          <TableHead className="w-[50px]"></TableHead>
                           <TableHead className="w-[80px]">Rank</TableHead>
                           <TableHead className="w-[120px]">Document ID</TableHead>
                           <TableHead>Text Preview</TableHead>
@@ -225,32 +304,68 @@ export function TextSearch() {
                       </TableHeader>
                       <TableBody>
                         {results.map((result, idx) => (
-                          <TableRow
-                            key={idx}
-                            className="border-white/10 hover:bg-white/5 transition-colors"
-                          >
-                            <TableCell className="font-medium">#{result.rank}</TableCell>
-                            <TableCell className="font-mono text-primary">Doc {result.doc_id}</TableCell>
-                            <TableCell className="text-sm text-muted-foreground max-w-md truncate">
-                              {result.text || "No text available"}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {result.score.toFixed(4)}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                <div className="w-24 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                  <div
-                                    className="h-full bg-gradient-to-r from-primary to-secondary"
-                                    style={{ width: `${result.score * 100}%` }}
-                                  />
+                          <>
+                            <TableRow
+                              key={idx}
+                              className="border-white/10 hover:bg-white/5 transition-colors cursor-pointer"
+                              onClick={() => toggleRow(result.rank)}
+                            >
+                              <TableCell>
+                                {expandedRows.has(result.rank) ? (
+                                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                )}
+                              </TableCell>
+                              <TableCell className="font-medium">#{result.rank}</TableCell>
+                              <TableCell className="font-mono text-primary">Doc {result.doc_id}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground max-w-md truncate">
+                                {result.text || "No text available"}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {result.score.toFixed(4)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <div className="w-24 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-gradient-to-r from-primary to-secondary"
+                                      style={{ width: `${result.score * 100}%` }}
+                                    />
+                                  </div>
+                                  <span className="font-semibold text-foreground min-w-[3rem] text-right">
+                                    {(result.score * 100).toFixed(1)}%
+                                  </span>
                                 </div>
-                                <span className="font-semibold text-foreground min-w-[3rem] text-right">
-                                  {(result.score * 100).toFixed(1)}%
-                                </span>
-                              </div>
-                            </TableCell>
-                          </TableRow>
+                              </TableCell>
+                            </TableRow>
+                            {expandedRows.has(result.rank) && (
+                              <TableRow className="bg-white/5 hover:bg-white/5">
+                                <TableCell colSpan={6} className="p-4">
+                                  <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+                                    <h4 className="mb-4 text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                                      Document Metadata
+                                    </h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                      {Object.entries(result).map(([key, value]) => {
+                                        if (['doc_id', 'score', 'rank', 'text'].includes(key)) return null;
+                                        return (
+                                          <div key={key} className="space-y-1">
+                                            <p className="text-xs font-medium text-muted-foreground capitalize">
+                                              {key.replace(/_/g, ' ')}
+                                            </p>
+                                            <p className="text-sm text-foreground break-words font-mono bg-white/5 p-2 rounded">
+                                              {String(value)}
+                                            </p>
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </>
                         ))}
                       </TableBody>
                     </Table>
@@ -276,8 +391,8 @@ export function TextSearch() {
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Index Name</label>
                   <Input
-                    value={indexName}
-                    onChange={(e) => setIndexName(e.target.value)}
+                    value={uploadIndexName}
+                    onChange={(e) => setUploadIndexName(e.target.value)}
                     placeholder="default"
                     className="bg-white/5 border-white/10"
                   />
@@ -286,9 +401,19 @@ export function TextSearch() {
                 <div className="space-y-2">
                   <label className="text-sm font-medium">CSV File</label>
                   <div className="flex items-center justify-center w-full">
-                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-white/10 border-dashed rounded-lg cursor-pointer bg-white/5 hover:bg-white/10 transition-all">
+                    <label
+                      className={cn(
+                        "flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-all",
+                        isDragging
+                          ? "border-primary bg-primary/10"
+                          : "border-white/10 bg-white/5 hover:bg-white/10"
+                      )}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                    >
                       <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <Upload className="w-8 h-8 mb-3 text-muted-foreground" />
+                        <Upload className={cn("w-8 h-8 mb-3", isDragging ? "text-primary" : "text-muted-foreground")} />
                         <p className="text-sm text-muted-foreground">
                           <span className="font-semibold">Click to upload</span> or drag and drop
                         </p>
@@ -304,6 +429,7 @@ export function TextSearch() {
                       />
                     </label>
                   </div>
+
                   {file && (
                     <p className="text-sm text-primary flex items-center gap-2 mt-2">
                       <FileText className="h-4 w-4" />
@@ -327,3 +453,4 @@ export function TextSearch() {
     </div>
   )
 }
+

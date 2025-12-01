@@ -25,14 +25,30 @@ class TextDocument(BaseModel):
     text: str
 
 
+
 class TextSearchRequest(BaseModel):
     query: str
     top_k: int = 10
+    index_name: str = "default"
 
 
 def register_text_search_routes(app, DATA_DIR):
     """Register text search endpoints to the FastAPI app"""
     
+    @app.get("/text/indices")
+    def list_text_indices():
+        """List all available text indices."""
+        try:
+            indices = []
+            if os.path.exists(DATA_DIR):
+                for entry in os.listdir(DATA_DIR):
+                    if entry.startswith("text_index_") and os.path.isdir(os.path.join(DATA_DIR, entry)):
+                        name = entry.replace("text_index_", "", 1)
+                        indices.append(name)
+            return {"ok": True, "indices": indices}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     @app.post("/text/build_index")
     def build_text_index(
         file: UploadFile = File(...),
@@ -85,11 +101,13 @@ def register_text_search_routes(app, DATA_DIR):
             
             # Build index
             start_time = time.time()
-            text_indexer = SPIMIIndexer(index_dir=index_dir, block_size=block_size)
-            text_indexer.build_index(documents)
+            # Always create new instance for new build
+            current_indexer = SPIMIIndexer(index_dir=index_dir, block_size=block_size)
+            current_indexer.build_index(documents)
             build_time = time.time() - start_time
             
-            # Initialize query processor
+            # Update global if it matches current (or if none)
+            text_indexer = current_indexer
             text_query_processor = QueryProcessor(indexer=text_indexer)
             
             return {
@@ -98,7 +116,8 @@ def register_text_search_routes(app, DATA_DIR):
                 "stats": {
                     "num_documents": len(documents),
                     "build_time_seconds": build_time,
-                    "index_dir": index_dir
+                    "index_dir": index_dir,
+                    "index_name": index_name
                 }
             }
             
@@ -112,11 +131,25 @@ def register_text_search_routes(app, DATA_DIR):
         """
         Search using custom SPIMI index.
         """
-        global text_query_processor
+        global text_indexer, text_query_processor
         
         try:
+            index_name = request.index_name
+            target_index_dir = os.path.join(DATA_DIR, f"text_index_{index_name}")
+            
+            # Check if we need to load a different index
+            if text_indexer is None or text_indexer.index_dir != target_index_dir:
+                if not os.path.exists(target_index_dir):
+                    return {"ok": False, "error": f"Index '{index_name}' not found. Build it first."}
+                
+                # Load index
+                print(f"Loading index: {index_name} from {target_index_dir}")
+                text_indexer = SPIMIIndexer(index_dir=target_index_dir)
+                text_indexer.load_index()
+                text_query_processor = QueryProcessor(indexer=text_indexer)
+            
             if text_query_processor is None:
-                return {"ok": False, "error": "Index not loaded. Build index first."}
+                return {"ok": False, "error": "Index not loaded."}
             
             start_time = time.time()
             results = text_query_processor.search(request.query, top_k=request.top_k)
@@ -153,7 +186,8 @@ def register_text_search_routes(app, DATA_DIR):
                 "ok": True,
                 "results": formatted_results,
                 "search_time_seconds": search_time,
-                "query": request.query
+                "query": request.query,
+                "index_name": index_name
             }
             
         except Exception as e:
@@ -293,9 +327,22 @@ def register_text_search_routes(app, DATA_DIR):
         """
         Compare custom index vs PostgreSQL for text search.
         """
-        global text_query_processor, postgres_search
+        global text_indexer, text_query_processor, postgres_search
         
         try:
+            index_name = request.index_name
+            target_index_dir = os.path.join(DATA_DIR, f"text_index_{index_name}")
+            
+            # Check if we need to load a different index
+            if text_indexer is None or text_indexer.index_dir != target_index_dir:
+                if not os.path.exists(target_index_dir):
+                    return {"ok": False, "error": f"Index '{index_name}' not found. Build it first."}
+                
+                # Load index
+                text_indexer = SPIMIIndexer(index_dir=target_index_dir)
+                text_indexer.load_index()
+                text_query_processor = QueryProcessor(indexer=text_indexer)
+
             if text_query_processor is None:
                 return {"ok": False, "error": "Custom index not loaded"}
             
@@ -321,10 +368,12 @@ def register_text_search_routes(app, DATA_DIR):
                     "results": results_pg
                 },
                 "speedup": time_pg / time_custom if time_custom > 0 else 0,
-                "query": request.query
+                "query": request.query,
+                "index_name": index_name
             }
             
         except Exception as e:
             import traceback
             traceback.print_exc()
             return {"ok": False, "error": str(e)}
+

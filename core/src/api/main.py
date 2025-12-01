@@ -287,6 +287,8 @@ async def run_query(request: Request):
                 resp["used_index_type"] = result["used_index_type"]
             if "used_index_columns" in result:
                 resp["used_index_columns"] = result["used_index_columns"]
+            if "actually_used" in result:
+                resp["actually_used"] = result["actually_used"]
             if isinstance(result.get('executed'), bool):
                 resp['executed'] = result.get('executed')
             if isinstance(result.get('dry_run'), bool):

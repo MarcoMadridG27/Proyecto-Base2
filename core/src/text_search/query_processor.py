@@ -57,6 +57,8 @@ class QueryProcessor:
             return []
             
         # Process each unique query term
+        query_norm_sq = 0.0
+        
         for term, query_tf in query_term_freqs.items():
             # Retrieve postings from disk
             # Postings format: [(doc_id, tfidf_score), ...]
@@ -74,9 +76,14 @@ class QueryProcessor:
             query_tf_weight = 1 + math.log(query_tf)
             query_weight = query_tf_weight * idf
             
+            # Accumulate query norm squared
+            query_norm_sq += query_weight ** 2
+            
             # Accumulate dot product for each document
             for doc_id, doc_weight in postings:
                 doc_scores[doc_id] += query_weight * doc_weight
+        
+        query_norm = math.sqrt(query_norm_sq)
         
         # Finalize scores with cosine normalization
         final_results = []
@@ -87,34 +94,14 @@ class QueryProcessor:
             if doc_id in self.indexer.doc_metadata:
                 doc_norm = self.indexer.doc_metadata[doc_id].get('norm', 0.0)
             
-            if doc_norm > 0:
+            if doc_norm > 0 and query_norm > 0:
                 # Cosine Similarity = DotProduct / (QueryNorm * DocNorm)
-                # Note: We can ignore QueryNorm for ranking purposes as it's constant for a given query
-                # But for exact cosine score, we should include it.
-                # Let's include it for correctness.
-                pass
+                score = dot_product / (query_norm * doc_norm)
             else:
-                continue
+                score = 0.0
                 
-            final_results.append((doc_id, dot_product / doc_norm))
+            final_results.append((doc_id, score))
             
-        # Calculate Query Norm (optional, but good for true cosine score)
-        query_norm = 0.0
-        for term, query_tf in query_term_freqs.items():
-            # We need to re-calculate weight or store it.
-            # Let's just re-calculate for simplicity or ignore if ranking is all that matters.
-            # For strict correctness:
-            if term in self.indexer.vocabulary:
-                # We need DF again. 
-                # Optimization: We could have stored query_weights in the loop above.
-                pass
-        
-        # To strictly follow "Cosine Similarity", we should divide by query norm.
-        # However, since query norm is constant for all docs, it doesn't affect ranking.
-        # I will skip query norm division to save time/complexity, as ranking is preserved.
-        # If the user wants absolute 0-1 scores, we would need it.
-        # Given "top-k ... ordenados por el score", ranking is key.
-        
         # Sort by score descending
         final_results.sort(key=lambda x: x[1], reverse=True)
         

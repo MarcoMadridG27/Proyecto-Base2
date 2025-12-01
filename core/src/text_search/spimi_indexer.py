@@ -146,15 +146,23 @@ class SPIMIIndexer:
         Merge all block indexes into final inverted index using k-way merge.
         Calculates TF-IDF and document norms on the fly.
         """
-        print(f"Merging {num_blocks} blocks...")
+        # Calculate buffer size per file to maximize RAM usage
+        # Default memory limit: 512MB
+        memory_limit_bytes = 512 * 1024 * 1024
+        buffer_size = int(memory_limit_bytes / (num_blocks + 1)) # +1 for output file
         
-        # Open all block files
+        # Ensure reasonable bounds (min 8KB, max 64MB per file)
+        buffer_size = max(8 * 1024, min(buffer_size, 64 * 1024 * 1024))
+        
+        print(f"Merging {num_blocks} blocks with buffer size {buffer_size/1024:.1f} KB per file...")
+        
+        # Open all block files with explicit buffering
         files = []
         block_iters = []
         
         for i in range(num_blocks):
             try:
-                f = open(os.path.join(self.index_dir, f"block_{i}.txt"), 'r', encoding='utf-8', newline='')
+                f = open(os.path.join(self.index_dir, f"block_{i}.txt"), 'r', encoding='utf-8', newline='', buffering=buffer_size)
                 files.append(f)
                 block_iters.append(self._block_iterator(f, i))
             except FileNotFoundError:
