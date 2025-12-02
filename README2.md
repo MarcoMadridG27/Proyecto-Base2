@@ -304,9 +304,10 @@ La interfaz está diseñada siguiendo principios de **Material Design** y **UX m
 - ✅ PostgreSQL: Funciones avanzadas para producción
 
 
-# Backend - Búsqueda de Imágenes con KNN
+### Búsqueda de Imágenes con KNN
 
 ## 🖼️ Índice Invertido para Descriptores Locales
+
 
 ### Construcción del Índice con Bag of Visual Words (BoVW)
 
