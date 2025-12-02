@@ -512,7 +512,7 @@ LIMIT 8;
 
 ## Gráfico Comparativo
 
-[INSERTAR GRÁFICO: Tiempo (ms) vs N - Escala logarítmica recomendada]
+![Comparación de Tiempos](Images/comp_1.png)
 
 ---
 
