@@ -465,67 +465,56 @@ LIMIT 8;
 
 #### Prueba N=1k
 
-```
-[ESPACIO PARA CAPTURA DE PANTALLA]
-```
+![Evidencia de tiempo](Images/exp_1k.png)
 
 **Resultado**:
-- Execution Time: **0.309 ms**
+- Execution Time: **0.577 ms**
 
 ---
 
 #### Prueba N=2k
 
-```
-[ESPACIO PARA CAPTURA DE PANTALLA]
-```
+![Evidencia de tiempo](Images/exp_2k.png)
 
 **Resultado**:
-- Execution Time: **0.653 ms**
+- Execution Time: **0.693 ms**
 
 ---
 
 #### Prueba N=4k
 
-```
-[ESPACIO PARA CAPTURA DE PANTALLA]
-```
+![Evidencia de tiempo](Images/exp_4k.png)
 
 **Resultado**:
-- Execution Time: **0.715 ms**
+- Execution Time: **1.784 ms**
 
 ---
 
 #### Prueba N=8k
 
-```
-[ESPACIO PARA CAPTURA DE PANTALLA]
-```
+![Evidencia de tiempo](Images/exp_8k.png)
 
 **Resultado**:
-- Execution Time: **0.728 ms**
+- Execution Time: **2.819 ms**
 
 ---
 
 #### Prueba N=16k
 
-```
-[ESPACIO PARA CAPTURA DE PANTALLA]
-```
+![Evidencia de tiempo](Images/exp_16k.png)
+
 
 **Resultado**:
-- Execution Time: **2.159 ms**
+- Execution Time: **1.869 ms**
 
 ---
 
 #### Prueba N=32k
+![Evidencia de tiempo](Images/exp_32k.png)
 
-```
-[ESPACIO PARA CAPTURA DE PANTALLA]
-```
 
 **Resultado**:
-- Execution Time: **1.601 ms**
+- Execution Time: **5.697 ms**
 
 ---
 
