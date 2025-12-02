@@ -719,7 +719,7 @@ LA query utiliza la métrica de distancia Euclidiana para encontrar los vectores
 
 A continuación se presentan los tiempos de respuesta promedio según el tamaño del dataset:
 
-| Dataset Size  CON índice |  SIN índice | PostgreSQL (pgvector) |
+| Dataset Size | CON índice |  SIN índice | PostgreSQL (pgvector) |
 | :--- | :--- | :--- | :--- |
 | **1k** | ~1.69 s | ~2.03 s | ~0.20 s |
 | **5k** | ~8.47 s | ~10.13 s | 0.98 s |
@@ -728,7 +728,7 @@ A continuación se presentan los tiempos de respuesta promedio según el tamaño
 
 
 ### Gráfico Comparativo
-![Comparación de Tiempos](Images/comparacion_tiempos_busqueda_audio.png)
+![Comparación de Tiempos](Images\comparacion_tiempos_busqueda.png)
 
 
 ### Análisis de Resultados
