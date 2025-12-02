@@ -419,7 +419,7 @@ def register_multimedia_routes(app, DATA_DIR):
             return {"ok": False, "error": str(e)}
 
     # -----------------------
-    # AUDIO-SPECIFIC ENDPOINTS
+    # AUDIO
     # -----------------------
     @app.post("/multimedia/audio/build_index")
     def build_audio_index(
@@ -430,16 +430,7 @@ def register_multimedia_routes(app, DATA_DIR):
         csv_encoding: str = Form("utf-8"),
         use_server_csv: bool = Form(False),
     ):
-        """
-        Builds an audio index using frame-level MFCC descriptors (one entry per audio file).
-        Steps:
-         - Expect CSV that lists audio filenames (relative to base_dir/media) OR use all audio files in media folder
-         - For each audio -> extract frame-level descriptors (frames, n_mfcc)
-         - Train codebook on stacked descriptors
-         - Compute histograms (TF or TF-IDF) for each audio
-         - Save codebook & keep descriptors/histograms in memory for search
-         - Build KNNIndexAudio (inverted index) for the 'index' method
-        """
+
         global audio_descriptors_list, audio_index_paths, audio_histograms
         global mm_codebook_audio, knn_index_audio, knn_sequential_audio
 
@@ -450,7 +441,6 @@ def register_multimedia_routes(app, DATA_DIR):
 
             csv_path = os.path.join(base_dir, "audio_dataset.csv")
 
-            # If file uploaded -> save; else if use_server_csv -> expect csv already at csv_path
             mp3_list = []
             if file is not None:
                 print(f"[AUDIO BUILD] Uploading CSV file...")
@@ -458,12 +448,10 @@ def register_multimedia_routes(app, DATA_DIR):
                     shutil.copyfileobj(file.file, buffer)
             else:
                 if not (use_server_csv and os.path.exists(csv_path)):
-                    # no CSV -> fallback to using all audio files in media_dir
                     print("[AUDIO BUILD] No CSV provided; scanning media directory for audio files.")
                 else:
                     print(f"[AUDIO BUILD] Using server CSV from: {csv_path}")
 
-            # If CSV exists, parse list of files from it (column names: mp3, file, audio, mp3_path)
             if os.path.exists(csv_path):
                 print(f"[AUDIO BUILD] Parsing CSV from: {csv_path}")
                 with open(csv_path, "r", encoding=csv_encoding, errors="ignore") as fh:
@@ -473,7 +461,6 @@ def register_multimedia_routes(app, DATA_DIR):
                         if mp3_field and str(mp3_field).strip():
                             mp3_list.append(str(mp3_field).strip())
 
-            # If mp3_list empty => scan media_dir for audio files
             if not mp3_list:
                 audio_extensions = ('.wav', '.mp3', '.flac', '.ogg', '.m4a')
                 for root, _, files in os.walk(media_dir):
@@ -485,7 +472,6 @@ def register_multimedia_routes(app, DATA_DIR):
             if not mp3_list:
                 return {"ok": False, "error": f"No audio files found in media dir ({media_dir}) and no CSV entries provided."}
 
-            # 1) Extract frame-level descriptors for each audio file
             descriptors_list = []
             paths = []
             n_missing = 0
@@ -496,14 +482,9 @@ def register_multimedia_routes(app, DATA_DIR):
                     n_missing += 1
                     continue
 
-                # Here we expect the CSV to be the "light" CSV (10x13 descriptors stored as JSON)
-                # If you don't provide CSV, we extract directly from files but reduce to 10 frames
                 desc = None
-                # try to find csv in base_dir and read descriptors if present
                 if os.path.exists(csv_path):
-                    # attempt to parse descriptors from CSV file (we will re-open and search row)
                     try:
-                        # It's expensive to reopen for each file; but CSV is expected to be small (light)
                         with open(csv_path, "r", encoding=csv_encoding, errors="ignore") as fh:
                             reader = csv.DictReader(fh, delimiter=",")
                             for row in reader:
@@ -521,7 +502,6 @@ def register_multimedia_routes(app, DATA_DIR):
                         desc = None
 
                 if desc is None:
-                    # fallback: extract directly from audio and reduce to 10 frames
                     desc = extract_audio_features(abs_path, n_mfcc=10, n_frames=40)
 
                 if desc is None or desc.shape[0] == 0:
@@ -537,15 +517,12 @@ def register_multimedia_routes(app, DATA_DIR):
             if not descriptors_list:
                 return {"ok": False, "error": "No valid audio descriptors extracted. Check files and format."}
 
-            # 2) Train codebook with descriptors_list (list of arrays (frames, dim))
             mm_codebook_audio = Codebook(k=k)
             mm_codebook_audio.train(descriptors_list)
 
-            # 3) Compute TF histograms (no TF-IDF yet)
             print("[AUDIO BUILD] Computing TF histograms for each audio...")
             hist_tf = [mm_codebook_audio.compute_histogram(desc, use_tfidf=False) for desc in descriptors_list]
 
-            # 4) If use_tfidf -> build idf and recompute TF-IDF histograms
             if use_tfidf:
                 print("[AUDIO BUILD] Building IDF and recomputing TF-IDF histograms...")
                 mm_codebook_audio.build_idf(hist_tf)
@@ -553,23 +530,18 @@ def register_multimedia_routes(app, DATA_DIR):
             else:
                 hist_tfidf = hist_tf
 
-            # 13) L2 normalize histograms for cosine similarity
             hist_tfidf = [l2_normalize_vec(h) for h in hist_tfidf]
 
-            # Save codebook
             os.makedirs(base_dir, exist_ok=True)
             codebook_path = os.path.join(base_dir, "codebook_audio.pkl")
             mm_codebook_audio.save(codebook_path)
 
-            # Save in-memory lists for search
             audio_descriptors_list = descriptors_list
             audio_index_paths = paths
             audio_histograms = hist_tfidf
 
-            # 6) Build inverted-index style KNNIndexAudio (for 'index' search method)
             print("[AUDIO BUILD] Building inverted index structure for audio search...")
             knn_index_audio = KNNIndexAudio()
-            # It expects descriptors per audio in build_index, so pass descriptors_list & paths
             knn_index_audio.build_index(descriptors_list, paths, mm_codebook_audio)
 
             # Done
@@ -595,13 +567,9 @@ def register_multimedia_routes(app, DATA_DIR):
         file: UploadFile = File(...),
         top_k: int = Form(13),
         index_name: str = Form("default"),
-        method: str = Form("sequential")  # 'sequential' or 'index'
+        method: str = Form("sequential")  
     ):
-        """
-        Search for similar audio using either:
-         - 'sequential' : compute histogram for query, then scan audio_histograms with heap (cosine)
-         - 'index'      : use KNNIndexAudio inverted index (requires codebook + knn_index_audio built)
-        """
+
         global audio_descriptors_list, audio_index_paths, audio_histograms
         global mm_codebook_audio, knn_index_audio
 
@@ -613,13 +581,11 @@ def register_multimedia_routes(app, DATA_DIR):
             shutil.copyfileobj(file.file, buffer)
 
         try:
-            # Extract frame-level descriptors for the query audio (10x13)
             query_descriptors = extract_audio_features(temp_path)
             os.remove(temp_path)
             if query_descriptors is None or query_descriptors.shape[0] == 0:
                 return {"ok": False, "error": "Could not extract descriptors from query audio."}
 
-            # Ensure codebook loaded
             base_dir = os.path.join(DATA_DIR, f"mm_index_{index_name}")
             if mm_codebook_audio is None:
                 codebook_path = os.path.join(base_dir, "codebook_audio.pkl")
@@ -629,15 +595,12 @@ def register_multimedia_routes(app, DATA_DIR):
                 mm_codebook_audio.load(codebook_path)
 
             if method == "sequential":
-                # Query histogram (TF-IDF if codebook has idf)
                 use_tfidf = mm_codebook_audio.idf is not None
                 query_hist = mm_codebook_audio.compute_histogram(query_descriptors, use_tfidf=use_tfidf)
                 query_hist = l2_normalize_vec(query_hist)
 
-                # Heap for top-K (min-heap)
                 heap = []
                 for i, hist in enumerate(audio_histograms):
-                    # both hist and query_hist are L2 normalized -> dot = cosine
                     sim = float(np.dot(query_hist, hist))
                     if len(heap) < top_k:
                         heapq.heappush(heap, (sim, audio_index_paths[i]))
@@ -645,7 +608,7 @@ def register_multimedia_routes(app, DATA_DIR):
                         if sim > heap[0][0]:
                             heapq.heapreplace(heap, (sim, audio_index_paths[i]))
 
-                # sort descending
+                
                 results = sorted(heap, key=lambda x: x[0], reverse=True)
                 formatted_results = [
                     {"rank": i + 1, "filename": path, "similarity": float(sim)}
@@ -653,15 +616,11 @@ def register_multimedia_routes(app, DATA_DIR):
                 ]
 
             elif method == "index":
-                # Use inverted-index KNNIndexAudio
                 if knn_index_audio is None:
                     knn_index_audio = KNNIndexAudio()
-                    # we already built it in build_audio_index normally; if not, build from current data
                     knn_index_audio.build_index(audio_descriptors_list, audio_index_paths, mm_codebook_audio)
 
-                # KNNIndexAudio.search expects descriptors (it will compute histogram internally)
                 results = knn_index_audio.search(query_descriptors, mm_codebook_audio, top_k=top_k)
-                # results format from your earlier implementation: list of (score, path)
                 formatted_results = [
                     {"rank": i + 1, "filename": path, "similarity": float(sim)}
                     for i, (sim, path) in enumerate(results)
@@ -697,15 +656,10 @@ def register_multimedia_routes(app, DATA_DIR):
         dataset_name: str = Form(...),
         top_k: int = Form(5)
     ):
-        """
-        Perform direct sequential search on a dataset without pre-indexing.
-        Extracts features on-the-fly.
-        """
+
         global mm_codebook
         
-        # Ensure codebook is loaded (we need it for histograms)
         if mm_codebook is None:
-            # Try to load default codebook from 'img' or 'imagenes'
             possible_indexes = ["img", "imagenes", "default"]
             loaded = False
             for idx_name in possible_indexes:
@@ -724,15 +678,12 @@ def register_multimedia_routes(app, DATA_DIR):
                 return {"ok": False, "error": "No default codebook found. Please build an index first (e.g., 'img')."}
 
         try:
-            # 1. Save query
             temp_query_path = os.path.join(DATA_DIR, f"temp_direct_query_{file.filename}")
             with open(temp_query_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
 
-            # 2. Extract query features
             start_total = time.time()
             
-            # Detect type
             is_audio = temp_query_path.lower().endswith(('.wav', '.mp3', '.flac'))
             
             if is_audio:
@@ -744,12 +695,11 @@ def register_multimedia_routes(app, DATA_DIR):
                 os.remove(temp_query_path)
                 return {"ok": False, "error": "Could not extract features from query"}
 
-            # Compute query histogram
             use_tfidf = mm_codebook.idf is not None
             query_hist = mm_codebook.compute_histogram(query_desc, use_tfidf=use_tfidf)
             query_hist = l2_normalize_vec(query_hist)
 
-            # 3. Process Dataset
+   
             dataset_path = os.path.join("datasets_para_experimentos", dataset_name)
             if not os.path.exists(dataset_path):
                 os.remove(temp_query_path)
@@ -765,10 +715,10 @@ def register_multimedia_routes(app, DATA_DIR):
             with zipfile.ZipFile(dataset_path, 'r') as zip_ref:
                 zip_ref.extractall(temp_extract_dir)
 
-            # 4. Sequential Scan
+            # 4. Sequential 
             results = []
             file_list = []
-            # Walk through temp dir
+   
             for root, dirs, files in os.walk(temp_extract_dir):
                 for filename in files:
                     if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.wav', '.mp3')):
@@ -778,7 +728,7 @@ def register_multimedia_routes(app, DATA_DIR):
             
             for file_path in file_list:
                 try:
-                    # Extract features
+                  
                     if is_audio:
                         desc = extract_audio_features(file_path, n_mfcc=10, n_frames=40)
                     else:
@@ -791,7 +741,7 @@ def register_multimedia_routes(app, DATA_DIR):
                     hist = mm_codebook.compute_histogram(desc, use_tfidf=use_tfidf)
                     hist = l2_normalize_vec(hist)
 
-                    # Distance (Chi-Squared)
+                    # (Chi-cuadrado)
                     eps = 1e-10
                     d = 0.5 * np.sum(((query_hist - hist) ** 2) / (query_hist + hist + eps))
                     
@@ -807,7 +757,6 @@ def register_multimedia_routes(app, DATA_DIR):
 
             total_time = time.time() - start_total
 
-            # Format results and encode images
             formatted = []
             import base64
             
@@ -831,7 +780,6 @@ def register_multimedia_routes(app, DATA_DIR):
                     "image_base64": img_b64
                 })
 
-            # Cleanup
             os.remove(temp_query_path)
             shutil.rmtree(temp_extract_dir)
 
