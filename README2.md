@@ -599,7 +599,7 @@ El sistema de búsqueda de audio utiliza el modelo **Bag-of-Audio-Words (BoAW)**
 1.  **Extracción de Características (MFCC)**:
     *   Cada archivo de audio se divide en frames.
     *   Se extraen coeficientes MFCC (Mel-Frequency Cepstral Coefficients).
-    *   **Configuración**: 13 coeficientes x 80 frames por segmento.
+    *   **Configuración**: 10 coeficientes x 80 frames por segmento.
 
 2.  **Generación de Codebook (K-Means)**:
     *   Se agrupan los descriptores de todos los audios usando el algoritmo **MiniBatch K-Means**.
@@ -689,15 +689,15 @@ def search(self, query_descriptors, codebook, top_k=5):
 ### Configuración del Experimento
 
 *   **Dataset**: Spotify Songs (Audio Preview)
-*   **Características**: MFCC (13 coeficientes x 80 frames)
-*   **Vocabulario (K)**: Configurable (ej. 130 clusters)
+*   **Características**: MFCC (10 coeficientes x 80 frames)
+*   **Vocabulario (K)**: Configurable (ej. 800 clusters)
 *   **Métrica de Similitud**: Coseno
 
 ### Resultados Comparativos
 
 A continuación se presentan los tiempos de respuesta promedio según el tamaño del dataset:
 
-| Dataset Size | Tu método CON índice | Tu método SIN índice | PostgreSQL (pgvector) |
+| Dataset Size  CON índice |  SIN índice | PostgreSQL (pgvector) |
 | :--- | :--- | :--- | :--- |
 | **1k** | ~1.69 s | ~2.03 s | ~0.20 s |
 | **5k** | ~8.47 s | ~10.13 s | 0.98 s |
@@ -715,7 +715,7 @@ A continuación se presentan los tiempos de respuesta promedio según el tamaño
 
 ### Conclusiones
 
-*   **Implementación Propia**:
+*   **Implementación nuestra**:
     *   Ideal para comprender los fundamentos de la recuperación de información multimedia (BoAW, Índices Invertidos).
     *   Permite control total sobre el proceso de extracción de características y ponderación.
     *   El rendimiento en Python puro tiene límites naturales comparado con motores compilados.
@@ -737,4 +737,4 @@ A continuación se presentan los tiempos de respuesta promedio según el tamaño
 
 **Autores**: Marco Madrid, Henry Quispe, Maria Surco  
 **Curso**: Base de Datos 2  
-**Fecha**: Diciembre 2024
+**Fecha**: Diciembre 2025
