@@ -186,8 +186,19 @@ class SchemaManager:
 
                 # find rtree index covering this column
                 r_idx = None
-                if col in indexes and "rtree" in indexes[col].__class__.__name__.lower():
+                # If searching for 'coordenadas', find any RTree index
+                if col == 'coordenadas' or col.lower() == 'coordenadas':
+                    for k, v in indexes.items():
+                        try:
+                            if "rtree" in v.__class__.__name__.lower():
+                                r_idx = v
+                                used_index_col = k
+                                break
+                        except Exception:
+                            continue
+                elif col in indexes and "rtree" in indexes[col].__class__.__name__.lower():
                     r_idx = indexes[col]
+                    used_index_col = col
                 else:
                     for k, v in indexes.items():
                         try:
@@ -195,12 +206,12 @@ class SchemaManager:
                                 cols = getattr(v, "_columns", None)
                                 if cols and col in cols:
                                     r_idx = v
+                                    used_index_col = k
                                     break
                         except Exception:
                             continue
 
                 if r_idx is not None:
-                    used_index_col = col
                     actually_used = True
                     used_index_type = r_idx.__class__.__name__ if hasattr(r_idx, '__class__') else None
                     offsets = r_idx.range_search(point, radius) or []
@@ -827,8 +838,7 @@ class SchemaManager:
                 return None
 
             pair = None
-            for a, b in [("x", "y"), ("y", "x"), ("lat", "lon"), ("lon", "lat"), ("latitude", "longitude"), ("longitude", "latitude"), ("lng", "lat")]:
-                p = find_pair(a, b)
+            for a, b in [("x", "y"), ("y", "x"), ("lat", "lon"), ("lon", "lat"), ("latitude", "longitude"), ("longitude", "latitude"), ("latitud", "longitud"), ("longitud", "latitud"), ("lng", "lat")]:
                 if p:
                     pair = p
                     break

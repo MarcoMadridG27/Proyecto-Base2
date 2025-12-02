@@ -287,6 +287,8 @@ async def run_query(request: Request):
                 resp["used_index_type"] = result["used_index_type"]
             if "used_index_columns" in result:
                 resp["used_index_columns"] = result["used_index_columns"]
+            if "actually_used" in result:
+                resp["actually_used"] = result["actually_used"]
             if isinstance(result.get('executed'), bool):
                 resp['executed'] = result.get('executed')
             if isinstance(result.get('dry_run'), bool):
@@ -757,3 +759,12 @@ def reload_catalog():
         return {"ok": True, "message": "Catalog reloaded"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# Text Search Endpoints
+from src.api.text_search_routes import register_text_search_routes
+register_text_search_routes(app, DATA_DIR)
+
+# Multimedia Search Endpoints
+from src.api.multimedia_routes import register_multimedia_routes
+register_multimedia_routes(app, DATA_DIR)

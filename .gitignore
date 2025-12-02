@@ -93,6 +93,21 @@ core/data/**/catalog.json
 core/data/**/.catalog.json
 core/data/catalog.json
 
+
 # Ignore any per-test catalog directories (often used by local tests)
 core/data/test_*/catalog.json
 
+# ================================
+# 📂 DATASETS & ARCHIVES
+# ================================
+*.zip
+*.csv
+*.tar.gz
+*.rar
+songs/
+# ================================
+# 🐛 LOGS & DEBUG OUTPUT
+# ================================
+debug_output*.txt
+error.txt
+spimi_test_log.txt
