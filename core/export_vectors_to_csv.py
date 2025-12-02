@@ -5,7 +5,6 @@ import numpy as np
 import argparse
 import sys
 
-# Add src to path to import KNNIndex if needed, though we might just load pickle directly
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 def export_to_csv(index_name, output_file):
@@ -27,14 +26,11 @@ def export_to_csv(index_name, output_file):
     
     with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
-        # Header
         writer.writerow(['id', 'path', 'vector'])
         
         for doc_id, vector in vectors.items():
             path = metadata.get(doc_id, "")
-            
-            # Format vector as string "[v1, v2, ...]"
-            # Ensure it's a flat list
+
             if isinstance(vector, np.ndarray):
                 vec_list = vector.flatten().tolist()
             else:
