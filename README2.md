@@ -533,12 +533,12 @@ LIMIT 8;
 
 | Dataset Size | KNN Secuencial (ms) | KNN Indexado (ms) | KNN PostgreSQL (ms) | Speedup Indexado vs Secuencial | Speedup PostgreSQL vs Secuencial |
 |--------------|---------------------|-------------------|---------------------|--------------------------------|----------------------------------|
-| 1k           | [PENDIENTE]         | [PENDIENTE]       | **0.309**           | -                              | -                                |
-| 2k           | [PENDIENTE]         | [PENDIENTE]       | **0.653**           | -                              | -                                |
-| 4k           | [PENDIENTE]         | [PENDIENTE]       | **0.715**           | -                              | -                                |
-| 8k           | [PENDIENTE]         | [PENDIENTE]       | **0.728**           | -                              | -                                |
+| 1k           | [PENDIENTE]         | [PENDIENTE]       | **0.577**           | -                              | -                                |
+| 2k           | [PENDIENTE]         | [PENDIENTE]       | **0.693**           | -                              | -                                |
+| 4k           | [PENDIENTE]         | [PENDIENTE]       | **1.784**           | -                              | -                                |
+| 8k           | [PENDIENTE]         | [PENDIENTE]       | **2.819**           | -                              | -                                |
 | 16k          | [PENDIENTE]         | [PENDIENTE]       | **2.159**           | -                              | -                                |
-| 32k          | [PENDIENTE]         | [PENDIENTE]       | **1.601**           | -                              | -                                |
+| 32k          | [PENDIENTE]         | [PENDIENTE]       | **1.869**           | -                              | -                                |
 
 ---
 
