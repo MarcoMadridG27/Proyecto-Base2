@@ -684,6 +684,28 @@ def search(self, query_descriptors, codebook, top_k=5):
 
 ---
 
+### Corre en postrgeSQL con pgvector
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE TABLE audio_vectors (
+    id SERIAL PRIMARY KEY,
+    filename TEXT,
+    embedding vector(800)  -- Dimensión del histograma BoAW
+);
+
+--Query de búsqueda
+SELECT 
+    id,
+    embedding <-> '[-532.774658,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,...,17.769882,17.914927,3.459082,-4.064121]' 
+    AS distance
+FROM audio_embeddings
+ORDER BY distance
+LIMIT 5;
+
+```
+LA query utiliza la métrica de distancia Euclidiana para encontrar los vectores más cercanos al vector de consulta. Además esta se repite para diferentes tamaños de dataset (1k, 5k, 10k, 13k).
+
+
 ## 📊 Experimentación (Audio)
 
 ### Configuración del Experimento
@@ -703,6 +725,11 @@ A continuación se presentan los tiempos de respuesta promedio según el tamaño
 | **5k** | ~8.47 s | ~10.13 s | 0.98 s |
 | **10k** | ~12.93 s | ~17.27 s | ~1.96 s |
 | **13k** | ~17.01 s | ~20.35 s | ~2.55 s |
+
+
+### Gráfico Comparativo
+![Comparación de Tiempos](Images/comparacion_tiempos_busqueda_audio.png)
+
 
 ### Análisis de Resultados
 
