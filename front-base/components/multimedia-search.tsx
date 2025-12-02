@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,6 +15,7 @@ type SimilarObject = {
   filename: string
   distance: number
   similarity: number
+  image_base64?: string
 }
 
 type MultimediaMetrics = {
@@ -38,6 +39,29 @@ function MultimediaSearch() {
   const [buildIndexName, setBuildIndexName] = useState("default")
   const [kClusters, setKClusters] = useState(100)
 
+  // Direct Search State
+  const [directDatasets, setDirectDatasets] = useState<string[]>([])
+  const [selectedDirectDataset, setSelectedDirectDataset] = useState<string>("")
+  const [directQueryFile, setDirectQueryFile] = useState<File | null>(null)
+  const [directPreviewUrl, setDirectPreviewUrl] = useState<string>("")
+  const [directResults, setDirectResults] = useState<SimilarObject[]>([])
+  const [directMetrics, setDirectMetrics] = useState<MultimediaMetrics | null>(null)
+  const [directLoading, setDirectLoading] = useState(false)
+  const [directTopK, setDirectTopK] = useState(5)
+
+  // Fetch datasets on mount
+  useEffect(() => {
+    fetch("http://localhost:8000/multimedia/list_datasets")
+      .then(res => res.json())
+      .then(data => {
+        if (data.datasets) {
+          setDirectDatasets(data.datasets)
+          if (data.datasets.length > 0) setSelectedDirectDataset(data.datasets[0])
+        }
+      })
+      .catch(err => console.error("Failed to load datasets", err))
+  }, [])
+
   // --- HANDLE FILE UPLOAD (Only Images) ---
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -53,6 +77,20 @@ function MultimediaSearch() {
     // Create preview
     const reader = new FileReader()
     reader.onload = (e) => setPreviewUrl(e.target?.result as string)
+    reader.readAsDataURL(file)
+  }
+
+  // --- HANDLE DIRECT FILE UPLOAD ---
+  const handleDirectFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith("image/") && !file.type.startsWith("audio/")) {
+      toast.error("Please upload an image or audio file")
+      return
+    }
+    setDirectQueryFile(file)
+    const reader = new FileReader()
+    reader.onload = (e) => setDirectPreviewUrl(e.target?.result as string)
     reader.readAsDataURL(file)
   }
 
@@ -96,6 +134,52 @@ function MultimediaSearch() {
       toast.error(err instanceof Error ? err.message : "Search failed")
     } finally {
       setLoading(false)
+    }
+  }
+
+  // --- DIRECT SEARCH FUNCTION ---
+  const handleDirectSearch = async () => {
+    if (!directQueryFile) {
+      toast.error("Please upload a query file first")
+      return
+    }
+    if (!selectedDirectDataset) {
+      toast.error("Please select a dataset")
+      return
+    }
+
+    setDirectLoading(true)
+    setDirectResults([])
+    setDirectMetrics(null)
+
+    try {
+      const formData = new FormData()
+      formData.append("file", directQueryFile)
+      formData.append("dataset_name", selectedDirectDataset)
+      formData.append("top_k", directTopK.toString())
+
+      const response = await fetch("http://localhost:8000/multimedia/search_direct", {
+        method: "POST",
+        body: formData,
+      })
+
+      const data = await response.json()
+
+      if (data.ok) {
+        setDirectResults(data.results || [])
+        setDirectMetrics({
+          execution_time: data.search_time_seconds * 1000,
+          total_similar: data.total_scanned || 0,
+        })
+        toast.success(`Scanned ${data.total_scanned} files in ${data.search_time_seconds.toFixed(2)}s`)
+      } else {
+        throw new Error(data.error || "Direct search failed")
+      }
+    } catch (err) {
+      console.error("Direct search error:", err)
+      toast.error(err instanceof Error ? err.message : "Direct search failed")
+    } finally {
+      setDirectLoading(false)
     }
   }
 
@@ -156,8 +240,9 @@ function MultimediaSearch() {
       </div>
 
       <Tabs defaultValue="search" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 max-w-[400px] mb-8">
+        <TabsList className="grid w-full grid-cols-3 max-w-[600px] mb-8">
           <TabsTrigger value="search">Search Images</TabsTrigger>
+          <TabsTrigger value="direct">Direct Search</TabsTrigger>
           <TabsTrigger value="build">Build Index</TabsTrigger>
         </TabsList>
 
@@ -359,6 +444,177 @@ function MultimediaSearch() {
                   <h3 className="text-xl font-medium text-white">No results yet</h3>
                   <p className="text-muted-foreground mt-2 max-w-sm">
                     Upload an image from the panel on the left to start finding visually similar items in your dataset.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* --- DIRECT SEARCH TAB --- */}
+        <TabsContent value="direct" className="space-y-8">
+          <div className="grid gap-8 md:grid-cols-[350px_1fr]">
+            {/* Left Column: Config */}
+            <div className="space-y-6">
+              <Card className="glass-card border-white/10 shadow-lg">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Database className="h-5 w-5 text-green-400" />
+                    Direct Sequential
+                  </CardTitle>
+                  <CardDescription>
+                    Scan a raw dataset ZIP without indexing.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+
+                  {/* Dataset Selector */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Select Dataset (ZIP)</label>
+                    <select
+                      className="flex h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      value={selectedDirectDataset}
+                      onChange={(e) => setSelectedDirectDataset(e.target.value)}
+                    >
+                      {directDatasets.map(ds => (
+                        <option key={ds} value={ds} className="bg-black text-white">{ds}</option>
+                      ))}
+                      {directDatasets.length === 0 && <option value="" className="bg-black text-white">No datasets found</option>}
+                    </select>
+                  </div>
+
+                  {/* Upload Box */}
+                  <div className="relative group">
+                    <input
+                      type="file"
+                      accept="image/*,audio/*"
+                      onChange={handleDirectFileSelect}
+                      className="hidden"
+                      id="direct-input"
+                    />
+                    <label
+                      htmlFor="direct-input"
+                      className={cn(
+                        "flex flex-col items-center justify-center h-48 rounded-xl border-2 border-dashed transition-all cursor-pointer overflow-hidden relative",
+                        directQueryFile
+                          ? "border-green-500 bg-black/40"
+                          : "border-white/20 hover:border-green-500 hover:bg-green-500/5 bg-white/5"
+                      )}
+                    >
+                      {directPreviewUrl ? (
+                        <img
+                          src={directPreviewUrl}
+                          alt="Preview"
+                          className="w-full h-full object-contain p-2"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center gap-2 text-muted-foreground group-hover:text-green-400 transition-colors">
+                          <Upload className="h-8 w-8 mb-2" />
+                          <span className="text-sm font-medium">Upload Query</span>
+                        </div>
+                      )}
+                    </label>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Top K</label>
+                    <Input
+                      type="number"
+                      value={directTopK}
+                      onChange={(e) => setDirectTopK(parseInt(e.target.value))}
+                      min={1}
+                      className="bg-white/5 border-white/10"
+                    />
+                  </div>
+
+                  <Button
+                    onClick={handleDirectSearch}
+                    disabled={directLoading || !directQueryFile || !selectedDirectDataset}
+                    className="w-full h-12 text-base font-semibold shadow-lg shadow-green-500/20 bg-green-600 hover:bg-green-700 text-white"
+                    size="lg"
+                  >
+                    {directLoading ? (
+                      <span className="flex items-center gap-2">
+                        <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
+                        Scanning...
+                      </span>
+                    ) : "Run Sequential Scan"}
+                  </Button>
+
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Right Column: Results */}
+            <div className="space-y-6">
+              {directResults.length > 0 ? (
+                <div className="space-y-6 animate-fade-in">
+
+                  {/* Metrics */}
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Card className="glass-card border-white/10 bg-green-500/5">
+                      <CardContent className="pt-6 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs text-muted-foreground font-medium uppercase">Total Time</p>
+                          <p className="text-3xl font-bold text-green-400 tracking-tight">
+                            {directMetrics?.execution_time ? directMetrics.execution_time.toFixed(0) : 0}
+                            <span className="text-sm font-normal text-muted-foreground ml-1">ms</span>
+                          </p>
+                        </div>
+                        <Clock className="h-10 w-10 text-green-500/20" />
+                      </CardContent>
+                    </Card>
+                    <Card className="glass-card border-white/10 bg-blue-500/5">
+                      <CardContent className="pt-6 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs text-muted-foreground font-medium uppercase">Files Scanned</p>
+                          <p className="text-3xl font-bold text-blue-400 tracking-tight">
+                            {directMetrics?.total_similar}
+                          </p>
+                        </div>
+                        <Database className="h-10 w-10 text-blue-500/20" />
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Results List */}
+                  <div className="grid gap-4">
+                    {directResults.map((obj, idx) => (
+                      <Card key={idx} className="glass-card border-white/10 p-4 flex items-center gap-4 hover:bg-white/5 transition-colors">
+                        <div className="h-16 w-16 rounded-md bg-white/10 flex-shrink-0 overflow-hidden relative">
+                          {obj.image_base64 ? (
+                            <img
+                              src={`data:image/jpeg;base64,${obj.image_base64}`}
+                              alt={obj.filename}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center w-full h-full font-bold text-lg">
+                              #{obj.rank}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate text-white">{obj.filename}</p>
+                          <p className="text-sm text-muted-foreground">Distance: {obj.distance.toFixed(4)}</p>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-lg font-bold text-green-400">{(obj.similarity * 100).toFixed(1)}%</div>
+                          <div className="text-xs text-muted-foreground">Match</div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+
+                </div>
+              ) : (
+                <div className="h-full min-h-[400px] flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-xl bg-white/5 text-center p-8">
+                  <div className="bg-white/5 p-4 rounded-full mb-4">
+                    <Database className="h-12 w-12 text-muted-foreground/40" />
+                  </div>
+                  <h3 className="text-xl font-medium text-white">Ready to Scan</h3>
+                  <p className="text-muted-foreground mt-2 max-w-sm">
+                    Select a dataset and upload a query image to start a direct sequential scan.
                   </p>
                 </div>
               )}

@@ -679,3 +679,170 @@ def register_multimedia_routes(app, DATA_DIR):
             import traceback
             traceback.print_exc()
             return {"ok": False, "error": str(e)}
+
+    @app.get("/multimedia/list_datasets")
+    def list_experiment_datasets():
+        """List available ZIP datasets for experiments."""
+        datasets_dir = "datasets_para_experimentos"
+        if not os.path.exists(datasets_dir):
+            return {"datasets": []}
+        
+        files = [f for f in os.listdir(datasets_dir) if f.endswith(".zip")]
+        files.sort()
+        return {"datasets": files}
+
+    @app.post("/multimedia/search_direct")
+    def search_direct(
+        file: UploadFile = File(...),
+        dataset_name: str = Form(...),
+        top_k: int = Form(5)
+    ):
+        """
+        Perform direct sequential search on a dataset without pre-indexing.
+        Extracts features on-the-fly.
+        """
+        global mm_codebook
+        
+        # Ensure codebook is loaded (we need it for histograms)
+        if mm_codebook is None:
+            # Try to load default codebook from 'img' or 'imagenes'
+            possible_indexes = ["img", "imagenes", "default"]
+            loaded = False
+            for idx_name in possible_indexes:
+                path = os.path.join(DATA_DIR, f"mm_index_{idx_name}", "codebook.pkl")
+                if os.path.exists(path):
+                    try:
+                        mm_codebook = Codebook()
+                        mm_codebook.load(path)
+                        print(f"Loaded default codebook from {idx_name}")
+                        loaded = True
+                        break
+                    except:
+                        continue
+            
+            if not loaded:
+                return {"ok": False, "error": "No default codebook found. Please build an index first (e.g., 'img')."}
+
+        try:
+            # 1. Save query
+            temp_query_path = os.path.join(DATA_DIR, f"temp_direct_query_{file.filename}")
+            with open(temp_query_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+            # 2. Extract query features
+            start_total = time.time()
+            
+            # Detect type
+            is_audio = temp_query_path.lower().endswith(('.wav', '.mp3', '.flac'))
+            
+            if is_audio:
+                query_desc = extract_audio_features(temp_query_path, n_mfcc=10, n_frames=40)
+            else:
+                query_desc = mm_extractor.extract_image_features(temp_query_path)
+            
+            if query_desc is None:
+                os.remove(temp_query_path)
+                return {"ok": False, "error": "Could not extract features from query"}
+
+            # Compute query histogram
+            use_tfidf = mm_codebook.idf is not None
+            query_hist = mm_codebook.compute_histogram(query_desc, use_tfidf=use_tfidf)
+            query_hist = l2_normalize_vec(query_hist)
+
+            # 3. Process Dataset
+            dataset_path = os.path.join("datasets_para_experimentos", dataset_name)
+            if not os.path.exists(dataset_path):
+                os.remove(temp_query_path)
+                return {"ok": False, "error": f"Dataset {dataset_name} not found"}
+
+            # Create temp dir for extraction
+            temp_extract_dir = os.path.join(DATA_DIR, "temp_direct_extract")
+            if os.path.exists(temp_extract_dir):
+                shutil.rmtree(temp_extract_dir)
+            os.makedirs(temp_extract_dir)
+
+            print(f"Unzipping {dataset_name}...")
+            with zipfile.ZipFile(dataset_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_extract_dir)
+
+            # 4. Sequential Scan
+            results = []
+            file_list = []
+            # Walk through temp dir
+            for root, dirs, files in os.walk(temp_extract_dir):
+                for filename in files:
+                    if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.wav', '.mp3')):
+                        file_list.append(os.path.join(root, filename))
+            
+            print(f"Scanning {len(file_list)} files...")
+            
+            for file_path in file_list:
+                try:
+                    # Extract features
+                    if is_audio:
+                        desc = extract_audio_features(file_path, n_mfcc=10, n_frames=40)
+                    else:
+                        desc = mm_extractor.extract_image_features(file_path)
+                    
+                    if desc is None:
+                        continue
+
+                    # Histogram
+                    hist = mm_codebook.compute_histogram(desc, use_tfidf=use_tfidf)
+                    hist = l2_normalize_vec(hist)
+
+                    # Distance (Chi-Squared)
+                    eps = 1e-10
+                    d = 0.5 * np.sum(((query_hist - hist) ** 2) / (query_hist + hist + eps))
+                    
+                    results.append((d, file_path))
+                    
+                except Exception as e:
+                    print(f"Error processing {file_path}: {e}")
+                    continue
+
+            # Sort by distance
+            results.sort(key=lambda x: x[0])
+            top_results = results[:top_k]
+
+            total_time = time.time() - start_total
+
+            # Format results and encode images
+            formatted = []
+            import base64
+            
+            for rank, (dist, path) in enumerate(top_results, 1):
+                rel_name = os.path.basename(path)
+                sim = 1.0 / (1.0 + float(dist))
+                
+                # Encode image to base64
+                img_b64 = None
+                try:
+                    with open(path, "rb") as img_file:
+                        img_b64 = base64.b64encode(img_file.read()).decode('utf-8')
+                except Exception as e:
+                    print(f"Error encoding image {path}: {e}")
+
+                formatted.append({
+                    "rank": rank,
+                    "filename": rel_name,
+                    "distance": float(dist),
+                    "similarity": sim,
+                    "image_base64": img_b64
+                })
+
+            # Cleanup
+            os.remove(temp_query_path)
+            shutil.rmtree(temp_extract_dir)
+
+            return {
+                "ok": True,
+                "results": formatted,
+                "search_time_seconds": total_time,
+                "total_scanned": len(file_list)
+            }
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {"ok": False, "error": str(e)}
