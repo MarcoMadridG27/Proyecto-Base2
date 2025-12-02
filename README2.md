@@ -728,7 +728,7 @@ A continuación se presentan los tiempos de respuesta promedio según el tamaño
 
 
 ### Gráfico Comparativo
-![Comparación de Tiempos](Images/comparacion_tiempos_busqueda_audio.png)
+![Comparación de Tiempos](Images\comparacion_tiempos_busqueda.png)
 
 
 ### Análisis de Resultados
