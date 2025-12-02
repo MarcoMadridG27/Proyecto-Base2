@@ -701,8 +701,8 @@ A continuación se presentan los tiempos de respuesta promedio según el tamaño
 | :--- | :--- | :--- | :--- |
 | **1k** | ~1.69 s | ~2.03 s | ~0.20 s |
 | **5k** | ~8.47 s | ~10.13 s | 0.98 s |
-| **10k** | ~16.93 s | ~20.27 s | ~1.96 s |
-| **13k** | ~22.01 s | ~26.35 s | ~2.55 s |
+| **10k** | ~12.93 s | ~17.27 s | ~1.96 s |
+| **13k** | ~17.01 s | ~20.35 s | ~2.55 s |
 
 ### Análisis de Resultados
 
