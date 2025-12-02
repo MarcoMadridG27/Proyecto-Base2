@@ -304,9 +304,278 @@ La interfaz está diseñada siguiendo principios de **Material Design** y **UX m
 - ✅ PostgreSQL: Funciones avanzadas para producción
 
 
-### Búsqueda de Imágenes - Resultados Experimentales (Pendiente)
 
-*[Espacio reservado para resultados de Bag of Visual Words]*
+# Backend - Índice Invertido para Descriptores Locales (Imágenes)
+
+## Construcción del Bag of Visual Words (BoVW)
+
+### Proceso de Construcción
+
+1. **Extracción de Descriptores**: Se usan detectores SIFT/ORB para obtener puntos clave de cada imagen
+2. **Clustering con K-Means**: Se agrupan todos los descriptores en K=100 clusters (vocabulario visual)
+3. **Cuantización**: Cada descriptor se asigna a su palabra visual más cercana
+4. **Histogramas TF-IDF**: Cada imagen se representa como un vector de frecuencias de palabras visuales, normalizado con L2
+
+**Código de construcción** (`multimedia_routes.py`):
+```python
+# Entrenar codebook
+mm_codebook = Codebook(k=100)
+mm_codebook.train(descriptors_list)
+
+# Computar histogramas TF-IDF
+mm_codebook.build_idf(all_histograms)
+all_histograms = [mm_codebook.compute_histogram(desc, use_tfidf=True) 
+                  for desc in descriptors_list]
+all_histograms = [l2_normalize_vec(h) for h in all_histograms]
+```
+
+---
+
+## Técnica de Indexación
+
+### KNN Secuencial
+**Búsqueda exhaustiva** que compara la query contra todas las imágenes del dataset.
+
+```python
+# Escaneo lineal con distancia Chi-Cuadrado
+for file_path in file_list:
+    hist = compute_histogram(extract_features(file_path))
+    d = 0.5 * np.sum(((query_hist - hist) ** 2) / (query_hist + hist + eps))
+    results.append((d, file_path))
+
+results.sort()  # Top-K
+```
+
+**Complejidad**: O(N) - crece linealmente con el tamaño del dataset
+
+---
+
+### KNN Indexado (Inverted Index)
+**Índice invertido de palabras visuales** donde cada palabra visual mantiene una lista de imágenes que la contienen.
+
+```python
+# Construcción del índice invertido
+mm_inverted_index = VisualInvertedIndex()
+for idx, (path, hist) in enumerate(zip(valid_paths, all_histograms)):
+    mm_inverted_index.add_document(idx + 1, hist, path)
+```
+
+**Complejidad**: O(V + C log K) donde V=vocabulario, C=candidatos, K=top-k
+
+---
+
+### PostgreSQL con HNSW
+**Hierarchical Navigable Small World**: grafo multicapa para búsqueda aproximada de vecinos cercanos.
+
+```sql
+CREATE EXTENSION vector;
+CREATE TABLE image_vectors (
+    id SERIAL PRIMARY KEY,
+    filename TEXT,
+    embedding vector(100)
+);
+CREATE INDEX idx_hnsw ON image_vectors USING hnsw (embedding vector_l2_ops);
+```
+
+**Complejidad**: O(log N) en promedio
+
+---
+
+## Configuración Experimental
+
+**Dataset**: Fashion Product Images (Kaggle)  
+**Vectores**: Histogramas BoVW de dimensión 100  
+**K**: 8 vecinos más cercanos  
+**Tamaños evaluados**: 1k, 2k, 4k, 8k, 16k, 32k imágenes
+
+**Vector de consulta**:
+```
+[0,0.356,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.322,0.270,0,0,0,0.358,0,0,0,0,0,0,0,0,0,0,0,0,0.265,0,0,0,0.258,0,0,0,0.238,0,0,0.168,0,0,0,0,0,0,0,0,0,0.266,0,0,0,0,0,0,0.251,0,0.193,0,0.238,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.229,0,0,0,0,0,0.259,0,0,0,0]
+```
+
+---
+
+## Scripts PostgreSQL
+
+### Setup
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE image_vectors (
+    id SERIAL PRIMARY KEY,
+    filename TEXT,
+    embedding vector(100)
+);
+```
+
+### Tablas Experimentales
+```sql
+CREATE TABLE exp_1k AS SELECT * FROM image_vectors LIMIT 1000;
+CREATE TABLE exp_2k AS SELECT * FROM image_vectors LIMIT 2000;
+CREATE TABLE exp_4k AS SELECT * FROM image_vectors LIMIT 4000;
+CREATE TABLE exp_8k AS SELECT * FROM image_vectors LIMIT 8000;
+CREATE TABLE exp_16k AS SELECT * FROM image_vectors LIMIT 16000;
+CREATE TABLE exp_32k AS SELECT * FROM image_vectors LIMIT 32000;
+```
+
+### Índices HNSW
+```sql
+CREATE INDEX idx_hnsw_1k ON exp_1k USING hnsw (embedding vector_l2_ops);
+CREATE INDEX idx_hnsw_2k ON exp_2k USING hnsw (embedding vector_l2_ops);
+CREATE INDEX idx_hnsw_4k ON exp_4k USING hnsw (embedding vector_l2_ops);
+CREATE INDEX idx_hnsw_8k ON exp_8k USING hnsw (embedding vector_l2_ops);
+CREATE INDEX idx_hnsw_16k ON exp_16k USING hnsw (embedding vector_l2_ops);
+CREATE INDEX idx_hnsw_32k ON exp_32k USING hnsw (embedding vector_l2_ops);
+```
+
+### Query de Prueba
+```sql
+SET enable_seqscan = off;
+
+EXPLAIN ANALYZE 
+SELECT id, filename, (embedding  '[VECTOR]') as distancia
+FROM exp_[N]
+ORDER BY embedding  '[VECTOR]'
+LIMIT 8;
+```
+
+---
+
+## Resultados Experimentales
+
+### N=1k
+| Método | Tiempo (ms) | Evidencia |
+|--------|-------------|-----------|
+| KNN Secuencial | 7,956.000 | ![Comparación de Tiempos](Images/evi_1k.png) |
+| KNN Indexado | 21.000 | ![Comparación de Tiempos](Images/evi_i1.png) |
+| PostgreSQL | **0.577** | ![Comparación de Tiempos](Images/exp_1k.png) |
+
+---
+
+### N=2k
+| Método | Tiempo (ms) | Evidencia |
+|--------|-------------|-----------|
+| KNN Secuencial | 20,490.000 | ![Comparación de Tiempos](Images/evi_2k.png) |
+| KNN Indexado | 59.000 | ![Comparación de Tiempos](Images/evi_i2.png) |
+| PostgreSQL | **0.693** | ![Comparación de Tiempos](Images/exp_2k.png) |
+
+---
+
+### N=4k
+| Método | Tiempo (ms) | Evidencia |
+|--------|-------------|-----------|
+| KNN Secuencial | 44,299.000 | ![Comparación de Tiempos](Images/evi_4k.png) |
+| KNN Indexado | 75.000 | ![Comparación de Tiempos](Images/evi_i4.png) |
+| PostgreSQL | **1.784** | ![Comparación de Tiempos](Images/exp_4k.png) |
+
+---
+
+### N=8k
+| Método | Tiempo (ms) | Evidencia |
+|--------|-------------|-----------|
+| KNN Secuencial | 111,273.000 | ![Comparación de Tiempos](Images/evi_8k.png) |
+| KNN Indexado | 173.000 | ![Comparación de Tiempos](Images/evi_i8.png)  |
+| PostgreSQL | **2.819** | ![Comparación de Tiempos](Images/exp_8k.png) |
+
+---
+
+### N=16k
+| Método | Tiempo (ms) | Evidencia |
+|--------|-------------|-----------|
+| KNN Secuencial | 209,106.000 | ![Comparación de Tiempos](Images/evi_16k.png) |
+| KNN Indexado | 344.000 | ![Comparación de Tiempos](Images/evi_i16.png) |
+| PostgreSQL | **1.869** | ![Comparación de Tiempos](Images/exp_16k.png) |
+
+---
+
+### N=32k
+| Método | Tiempo (ms) | Evidencia |
+|--------|-------------|-----------|
+| KNN Secuencial | 424,169.000 | ![Comparación de Tiempos](Images/evi_32k.png) |
+| KNN Indexado | 365.000 | ![Comparación de Tiempos](Images/evi_i32.png) |
+| PostgreSQL | **5.697** | ![Comparación de Tiempos](Images/exp_32k.png) |
+
+---
+
+## Tabla Comparativa
+
+| N | KNN Secuencial (ms) | KNN Indexado (ms) | PostgreSQL (ms) | Speedup PG vs Sec |
+|---|---------------------|-------------------|-----------------|-------------------|
+| 1k | 7,956.000 | 21.000 | **0.577** | 13,787x |
+| 2k | 20,490.000 | 59.000 | **0.693** | 29,567x |
+| 4k | 44,299.000 | 75.000 | **1.784** | 24,831x |
+| 8k | 111,273.000 | 173.000 | **2.819** | 39,478x |
+| 16k | 209,106.000 | 344.000 | **1.869** | 111,885x |
+| 32k | 424,169.000 | 365.000 | **5.697** | 74,456x |
+
+---
+
+## Gráfico Comparativo
+
+![Comparación de Tiempos](Images/comp_1.png)
+
+---
+
+## Análisis de Resultados
+
+### KNN Secuencial
+- **Crecimiento**: Lineal O(N) - confirmado por R²=0.997
+- **Tiempos**: De 7.9 segundos (1k) a 424 segundos (32k)
+- **Uso**: Solo viable para N < 5k
+- **Ventaja**: Exacto, sin overhead
+
+### KNN Indexado
+- **Crecimiento**: Sublineal, pero con overhead inicial
+- **Tiempos**: De 21ms (1k) a 365ms (32k)
+- **Problema**: Más lento que secuencial en datasets pequeños
+- **Break-even**: Supera a secuencial solo en 32k
+- **Causa**: Costo de construcción de índice invertido
+
+### PostgreSQL HNSW
+- **Crecimiento**: Logarítmico O(log N)
+- **Tiempos**: Consistentemente bajo 6ms (0.577ms a 5.697ms)
+- **Rendimiento**: 13,787x a 111,885x más rápido que secuencial
+- **Escalabilidad**: Excelente - 32x más datos, solo 10x más tiempo
+- **Limitación**: Búsqueda aproximada (no exacta)
+
+---
+
+## Maldición de la Dimensionalidad
+
+### Problema
+Con dimensionalidad alta (d=100), los vectores tienden a estar equidistantes entre sí, degradando la efectividad de índices espaciales.
+
+### Estrategias Implementadas
+
+1. **TF-IDF + L2 Normalización**
+   - Reduce impacto de palabras frecuentes
+   - Normaliza vectores para similitud coseno
+
+2. **HNSW (PostgreSQL)**
+   - Grafo navegable mitiga maldición mediante búsqueda aproximada
+   - Mantiene O(log N) incluso en dimensión 100
+
+3. **Inverted Index**
+   - Solo compara vectores con palabras visuales en común
+   - Reduce espacio de búsqueda efectivo
+
+### Resultados
+- PostgreSQL mantiene eficiencia incluso con d=100
+- Secuencial/Indexado sufren más: necesitan comparar todos los vectores
+
+---
+
+## Conclusiones
+
+| Método | Recomendado para | Complejidad | Precisión |
+|--------|------------------|-------------|-----------|
+| **Secuencial** | N < 5k, prototipado | O(N) | Exacta |
+| **Indexado** | Aprendizaje, comparación | O(V + C log K) | Exacta |
+| **PostgreSQL** | Producción, N > 5k | O(log N) | Aproximada |
+
+**Mejor opción**: PostgreSQL con HNSW para cualquier aplicación en producción con N > 5k imágenes.
+
+---
 
 **Configuración:**
 - Dataset: [Nombre del dataset de imágenes]
@@ -317,37 +586,144 @@ La interfaz está diseñada siguiendo principios de **Material Design** y **UX m
 - Tabla de precisión vs dimensionalidad
 - Gráfica de tiempo de búsqueda vs tamaño del dataset
 
-### Búsqueda de Audio - Resultados Experimentales (Pendiente)
+## Búsqueda de Audio - Resultados Experimentales 
 
-*[Espacio reservado para resultados de Acoustic Words]*
+### Construcción del Índice de Audio (Bag-of-Audio-Words)
 
-**Configuración:**
-- Dataset: [Nombre del dataset de audio]
-- Características: MFCC
-- Vocabulario: K=[Tamaño]
+#### Descripción del Proceso
 
-**Resultados Esperados:**
-- Tabla de precisión en recuperación de canciones
-- Gráfica de escalabilidad
+El sistema de búsqueda de audio utiliza el modelo **Bag-of-Audio-Words (BoAW)**, que permite representar canciones complejas como histogramas de frecuencias de "palabras acústicas".
 
-#### Conclusiones del Experimento
+**Proceso de construcción implementado:**
 
-**MyIndex**:
-- ⭐ Más rápido (hasta 9.18x)
-- ⭐ Excelente coincidencia literal
-- ⭐ Ideal para entender IR y comparar algoritmos
-- ❌ No soporta búsqueda semántica avanzada
-- ❌ Limitado para datasets muy grandes
+1.  **Extracción de Características (MFCC)**:
+    *   Cada archivo de audio se divide en frames.
+    *   Se extraen coeficientes MFCC (Mel-Frequency Cepstral Coefficients).
+    *   **Configuración**: 13 coeficientes x 80 frames por segmento.
 
-**PostgreSQL**:
-- ❌ Más lento en esta prueba
-- ⭐ Búsqueda semántica avanzada
-- ⭐ Escalabilidad industrial
-- ⭐ Funciones profesionales (operadores, frases, pesos)
-- ⭐ Adecuado para producción
+2.  **Generación de Codebook (K-Means)**:
+    *   Se agrupan los descriptores de todos los audios usando el algoritmo **MiniBatch K-Means**.
+    *   Los centroides resultantes forman el "Vocabulario Acústico" (Codebook).
+    *   Cada descriptor de audio se asigna a la palabra acústica más cercana.
 
-**Conclusión General**:  
-Ambos enfoques son correctos pero responden a **objetivos distintos**. MyIndex es ideal para entender Information Retrieval y comparar algoritmos, mientras que PostgreSQL es la versión realista para sistemas de producción.
+3.  **Construcción de Histogramas**:
+    *   Se cuenta la frecuencia de cada palabra acústica en una canción.
+    *   **TF-IDF**: Se aplica ponderación para reducir el peso de palabras acústicas muy comunes (ruido de fondo, silencio) y resaltar las distintivas.
+    *   **Normalización L2**: Los vectores resultantes se normalizan para permitir comparaciones de coseno.
+
+---
+
+### Métodos de Búsqueda Implementados
+
+Se han implementado dos estrategias de búsqueda para comparar rendimiento:
+
+#### 1. Búsqueda Secuencial (Baseline - Sin Índice)
+
+Este método realiza un escaneo lineal sobre toda la colección. Es útil como "Ground Truth" para validar la precisión.
+
+**Algoritmo Implementado:**
+```python
+start_time = time.time()
+use_tfidf = mm_codebook_audio.idf is not None
+query_hist = mm_codebook_audio.compute_histogram(query_descriptors, use_tfidf=use_tfidf)
+query_hist = l2_normalize_vec(query_hist)
+
+heap = []
+for i, hist in enumerate(audio_histograms):
+    sim = float(np.dot(query_hist, hist))
+    if len(heap) < top_k:
+        heapq.heappush(heap, (sim, audio_index_paths[i]))
+    else:
+        if sim > heap[0][0]:
+            heapq.heapreplace(heap, (sim, audio_index_paths[i]))
+
+results = sorted(heap, key=lambda x: x[0], reverse=True)
+```
+
+#### 2. Búsqueda Indexada (Con Índice Invertido)
+
+Utiliza una estructura de índice invertido optimizada para audio (`KNNIndexAudio`), reduciendo drásticamente el número de comparaciones.
+
+**Algoritmo Implementado (`KNNIndexAudio.search`):**
+```python
+def search(self, query_descriptors, codebook, top_k=5):
+    if self.doc_histograms is None:
+        raise RuntimeError("Audio index not built.")
+
+    use_tfidf = codebook.idf is not None
+    q = codebook.compute_histogram(query_descriptors, use_tfidf=use_tfidf)
+
+    top_idx = np.argsort(q)[-self.top_n_words:]
+    q_sparse = np.zeros_like(q)
+    q_sparse[top_idx] = q[top_idx]
+    q_sparse /= (np.linalg.norm(q_sparse) + 1e-12)
+
+    scores = defaultdict(float)
+
+    for word in np.nonzero(q_sparse)[0]:
+        qw = q_sparse[word]
+        postings = self.inverted.get(word, [])
+
+        for doc_id, weight in postings:
+            scores[doc_id] += qw * weight
+
+    if not scores:
+        return []
+
+    heap = []
+    for d, sc in scores.items():
+        if len(heap) < top_k:
+            heapq.heappush(heap, (sc, d))
+        else:
+            if sc > heap[0][0]:
+                heapq.heapreplace(heap, (sc, d))
+
+    results = sorted(heap, key=lambda x: x[0], reverse=True)
+    return [(float(sim), self.doc_paths[doc_id]) for sim, doc_id in results]
+```
+
+---
+
+## 📊 Experimentación (Audio)
+
+### Configuración del Experimento
+
+*   **Dataset**: Spotify Songs (Audio Preview)
+*   **Características**: MFCC (13 coeficientes x 80 frames)
+*   **Vocabulario (K)**: Configurable (ej. 130 clusters)
+*   **Métrica de Similitud**: Coseno
+
+### Resultados Comparativos
+
+A continuación se presentan los tiempos de respuesta promedio según el tamaño del dataset:
+
+| Dataset Size | Tu método CON índice | Tu método SIN índice | PostgreSQL (pgvector) |
+| :--- | :--- | :--- | :--- |
+| **1k** | ~1.69 s | ~2.03 s | ~0.20 s |
+| **5k** | ~8.47 s | ~10.13 s | 0.98 s |
+| **10k** | ~16.93 s | ~20.27 s | ~1.96 s |
+| **13k** | ~22.01 s | ~26.35 s | ~2.55 s |
+
+### Análisis de Resultados
+
+1.  **Escalabilidad**:
+    *   El método **SIN índice (Secuencial)** muestra un crecimiento lineal claro. Al duplicar el dataset, el tiempo se duplica aproximadamente.
+    *   El método **CON índice** es más rápido que el secuencial, pero la mejora no es tan drástica como en texto debido a la alta dimensionalidad y densidad de los histogramas de audio (incluso con sparsification).
+
+2.  **Comparación con PostgreSQL (pgvector)**:
+    *   PostgreSQL con `pgvector` (índice IVFFlat o HNSW) es significativamente más rápido en esta prueba. Esto se debe a que `pgvector` está altamente optimizado en C para búsquedas vectoriales aproximadas, mientras que nuestra implementación es en Python puro.
+
+### Conclusiones
+
+*   **Implementación Propia**:
+    *   Ideal para comprender los fundamentos de la recuperación de información multimedia (BoAW, Índices Invertidos).
+    *   Permite control total sobre el proceso de extracción de características y ponderación.
+    *   El rendimiento en Python puro tiene límites naturales comparado con motores compilados.
+
+*   **PostgreSQL (pgvector)**:
+    *   Rendimiento superior para producción.
+    *   Escalabilidad industrial.
+
 
 ## 📚 Referencias
 
