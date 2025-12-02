@@ -446,54 +446,54 @@ LIMIT 8;
 ### N=1k
 | Método | Tiempo (ms) | Evidencia |
 |--------|-------------|-----------|
-| KNN Secuencial | 7.956 | [CAPTURA] |
-| KNN Indexado | 21.000 | [CAPTURA] |
-| PostgreSQL | **0.577** | [CAPTURA] |
+| KNN Secuencial | 7.956 | ![Comparación de Tiempos](Images/evi_1k.png) |
+| KNN Indexado | 21.000 | ![Comparación de Tiempos](Images/evi_i1.png) |
+| PostgreSQL | **0.577** | ![Comparación de Tiempos](Images/exp_1k.png) |
 
 ---
 
 ### N=2k
 | Método | Tiempo (ms) | Evidencia |
 |--------|-------------|-----------|
-| KNN Secuencial | 20.490 | [CAPTURA] |
-| KNN Indexado | 59.000 | [CAPTURA] |
-| PostgreSQL | **0.693** | [CAPTURA] |
+| KNN Secuencial | 20.490 | ![Comparación de Tiempos](Images/evi_2k.png) |
+| KNN Indexado | 59.000 | ![Comparación de Tiempos](Images/evi_i2.png) |
+| PostgreSQL | **0.693** | ![Comparación de Tiempos](Images/exp_2k.png) |
 
 ---
 
 ### N=4k
 | Método | Tiempo (ms) | Evidencia |
 |--------|-------------|-----------|
-| KNN Secuencial | 44.299 | [CAPTURA] |
-| KNN Indexado | 75.000 | [CAPTURA] |
-| PostgreSQL | **1.784** | [CAPTURA] |
+| KNN Secuencial | 44.299 | ![Comparación de Tiempos](Images/evi_4k.png) |
+| KNN Indexado | 75.000 | ![Comparación de Tiempos](Images/evi_i4.png) |
+| PostgreSQL | **1.784** | ![Comparación de Tiempos](Images/exp_4k.png) |
 
 ---
 
 ### N=8k
 | Método | Tiempo (ms) | Evidencia |
 |--------|-------------|-----------|
-| KNN Secuencial | 111.273 | [CAPTURA] |
-| KNN Indexado | 173.000 | [CAPTURA] |
-| PostgreSQL | **2.819** | [CAPTURA] |
+| KNN Secuencial | 111.273 | ![Comparación de Tiempos](Images/evi_8k.png) |
+| KNN Indexado | 173.000 | ![Comparación de Tiempos](Images/evi_i8.png)  |
+| PostgreSQL | **2.819** | ![Comparación de Tiempos](Images/exp_8k.png) |
 
 ---
 
 ### N=16k
 | Método | Tiempo (ms) | Evidencia |
 |--------|-------------|-----------|
-| KNN Secuencial | 209.106 | [CAPTURA] |
-| KNN Indexado | 344.000 | [CAPTURA] |
-| PostgreSQL | **1.869** | [CAPTURA] |
+| KNN Secuencial | 209.106 | ![Comparación de Tiempos](Images/evi_16k.png) |
+| KNN Indexado | 344.000 | ![Comparación de Tiempos](Images/evi_i16.png) |
+| PostgreSQL | **1.869** | ![Comparación de Tiempos](Images/exp_16k.png) |
 
 ---
 
 ### N=32k
 | Método | Tiempo (ms) | Evidencia |
 |--------|-------------|-----------|
-| KNN Secuencial | 424.169 | [CAPTURA] |
-| KNN Indexado | 365.000 | [CAPTURA] |
-| PostgreSQL | **5.697** | [CAPTURA] |
+| KNN Secuencial | 424.169 | ![Comparación de Tiempos](Images/evi_32k.png) |
+| KNN Indexado | 365.000 | ![Comparación de Tiempos](Images/evi_i32.png) |
+| PostgreSQL | **5.697** | ![Comparación de Tiempos](Images/exp_32k.png) |
 
 ---
 
