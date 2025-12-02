@@ -1,0 +1,35 @@
+# Dependencies
+venv
+.venv
+ENV
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+
+# Data (Ignore large data, use volumes instead)
+data
+*.csv
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.mp3
+*.wav
+*.mp4
+*.jsonl
+
+# Environment
+.env
+.env.*
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
