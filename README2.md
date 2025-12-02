@@ -446,7 +446,7 @@ LIMIT 8;
 ### N=1k
 | Método | Tiempo (ms) | Evidencia |
 |--------|-------------|-----------|
-| KNN Secuencial | 7.956 | ![Comparación de Tiempos](Images/evi_1k.png) |
+| KNN Secuencial | 7,956.000 | ![Comparación de Tiempos](Images/evi_1k.png) |
 | KNN Indexado | 21.000 | ![Comparación de Tiempos](Images/evi_i1.png) |
 | PostgreSQL | **0.577** | ![Comparación de Tiempos](Images/exp_1k.png) |
 
@@ -455,7 +455,7 @@ LIMIT 8;
 ### N=2k
 | Método | Tiempo (ms) | Evidencia |
 |--------|-------------|-----------|
-| KNN Secuencial | 20.490 | ![Comparación de Tiempos](Images/evi_2k.png) |
+| KNN Secuencial | 20,490.000 | ![Comparación de Tiempos](Images/evi_2k.png) |
 | KNN Indexado | 59.000 | ![Comparación de Tiempos](Images/evi_i2.png) |
 | PostgreSQL | **0.693** | ![Comparación de Tiempos](Images/exp_2k.png) |
 
@@ -464,7 +464,7 @@ LIMIT 8;
 ### N=4k
 | Método | Tiempo (ms) | Evidencia |
 |--------|-------------|-----------|
-| KNN Secuencial | 44.299 | ![Comparación de Tiempos](Images/evi_4k.png) |
+| KNN Secuencial | 44,299.000 | ![Comparación de Tiempos](Images/evi_4k.png) |
 | KNN Indexado | 75.000 | ![Comparación de Tiempos](Images/evi_i4.png) |
 | PostgreSQL | **1.784** | ![Comparación de Tiempos](Images/exp_4k.png) |
 
@@ -473,7 +473,7 @@ LIMIT 8;
 ### N=8k
 | Método | Tiempo (ms) | Evidencia |
 |--------|-------------|-----------|
-| KNN Secuencial | 111.273 | ![Comparación de Tiempos](Images/evi_8k.png) |
+| KNN Secuencial | 111,273.000 | ![Comparación de Tiempos](Images/evi_8k.png) |
 | KNN Indexado | 173.000 | ![Comparación de Tiempos](Images/evi_i8.png)  |
 | PostgreSQL | **2.819** | ![Comparación de Tiempos](Images/exp_8k.png) |
 
@@ -482,7 +482,7 @@ LIMIT 8;
 ### N=16k
 | Método | Tiempo (ms) | Evidencia |
 |--------|-------------|-----------|
-| KNN Secuencial | 209.106 | ![Comparación de Tiempos](Images/evi_16k.png) |
+| KNN Secuencial | 209,106.000 | ![Comparación de Tiempos](Images/evi_16k.png) |
 | KNN Indexado | 344.000 | ![Comparación de Tiempos](Images/evi_i16.png) |
 | PostgreSQL | **1.869** | ![Comparación de Tiempos](Images/exp_16k.png) |
 
@@ -491,7 +491,7 @@ LIMIT 8;
 ### N=32k
 | Método | Tiempo (ms) | Evidencia |
 |--------|-------------|-----------|
-| KNN Secuencial | 424.169 | ![Comparación de Tiempos](Images/evi_32k.png) |
+| KNN Secuencial | 424,169.000 | ![Comparación de Tiempos](Images/evi_32k.png) |
 | KNN Indexado | 365.000 | ![Comparación de Tiempos](Images/evi_i32.png) |
 | PostgreSQL | **5.697** | ![Comparación de Tiempos](Images/exp_32k.png) |
 
@@ -501,12 +501,12 @@ LIMIT 8;
 
 | N | KNN Secuencial (ms) | KNN Indexado (ms) | PostgreSQL (ms) | Speedup PG vs Sec |
 |---|---------------------|-------------------|-----------------|-------------------|
-| 1k | 7.956 | 21.000 | **0.577** | 13.79x |
-| 2k | 20.490 | 59.000 | **0.693** | 29.57x |
-| 4k | 44.299 | 75.000 | **1.784** | 24.83x |
-| 8k | 111.273 | 173.000 | **2.819** | 39.48x |
-| 16k | 209.106 | 344.000 | **1.869** | 111.88x |
-| 32k | 424.169 | 365.000 | **5.697** | 74.46x |
+| 1k | 7,956.000 | 21.000 | **0.577** | 13,787x |
+| 2k | 20,490.000 | 59.000 | **0.693** | 29,567x |
+| 4k | 44,299.000 | 75.000 | **1.784** | 24,831x |
+| 8k | 111,273.000 | 173.000 | **2.819** | 39,478x |
+| 16k | 209,106.000 | 344.000 | **1.869** | 111,885x |
+| 32k | 424,169.000 | 365.000 | **5.697** | 74,456x |
 
 ---
 
@@ -520,18 +520,22 @@ LIMIT 8;
 
 ### KNN Secuencial
 - **Crecimiento**: Lineal O(N) - confirmado por R²=0.997
+- **Tiempos**: De 7.9 segundos (1k) a 424 segundos (32k)
 - **Uso**: Solo viable para N < 5k
 - **Ventaja**: Exacto, sin overhead
 
 ### KNN Indexado
 - **Crecimiento**: Sublineal, pero con overhead inicial
-- **Problema**: Más lento que secuencial hasta 32k
-- **Causa**: Costo de construcción de índice invertido no justificado en datasets pequeños
+- **Tiempos**: De 21ms (1k) a 365ms (32k)
+- **Problema**: Más lento que secuencial en datasets pequeños
+- **Break-even**: Supera a secuencial solo en 32k
+- **Causa**: Costo de construcción de índice invertido
 
 ### PostgreSQL HNSW
 - **Crecimiento**: Logarítmico O(log N)
-- **Rendimiento**: 13x a 111x más rápido que secuencial
-- **Escalabilidad**: Tiempos bajo 6ms incluso con 32k imágenes
+- **Tiempos**: Consistentemente bajo 6ms (0.577ms a 5.697ms)
+- **Rendimiento**: 13,787x a 111,885x más rápido que secuencial
+- **Escalabilidad**: Excelente - 32x más datos, solo 10x más tiempo
 - **Limitación**: Búsqueda aproximada (no exacta)
 
 ---
