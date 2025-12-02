@@ -119,15 +119,14 @@ def register_multimedia_routes(app, DATA_DIR):
             # Find all media files (images and audio)
             media_files = []
             image_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
-            audio_extensions = ('.wav', '.mp3', '.flac', '.ogg', '.m4a')
 
             for root, _, files in os.walk(media_dir):
                 for f in files:
-                    if f.lower().endswith(image_extensions + audio_extensions):
+                    if f.lower().endswith(image_extensions):
                         media_files.append(os.path.join(root, f))
 
             if not media_files:
-                return {"ok": False, "error": "No images or audio found in ZIP"}
+                return {"ok": False, "error": "No images found in ZIP"}
 
             # 1. Extract Features
             start_time = time.time()
@@ -142,9 +141,6 @@ def register_multimedia_routes(app, DATA_DIR):
 
                 if path.lower().endswith(image_extensions):
                     desc = mm_extractor.extract_image_features(path)
-                elif path.lower().endswith(audio_extensions):
-                    # For audio inside this general build, extract 10-frame descriptors
-                    desc = extract_audio_features(path, n_mfcc=10, n_frames=40)
                 else:
                     continue
 
@@ -270,6 +266,8 @@ def register_multimedia_routes(app, DATA_DIR):
                 return {"ok": False, "error": "Could not extract features from query image"}
 
             hist = mm_codebook.compute_histogram(desc)
+            # Normalize query to match index
+            hist = l2_normalize_vec(hist)
             print(f"Query histogram sum: {np.sum(hist)}")
             print(f"Query histogram non-zero elements: {np.count_nonzero(hist)}")
 
@@ -283,7 +281,19 @@ def register_multimedia_routes(app, DATA_DIR):
 
             # Format results
             formatted_results = []
-            for rank, (dist, doc_id, path) in enumerate(results, 1):
+            for rank, item in enumerate(results, 1):
+                dist = item[0]   # Primer valor siempre es distancia
+                doc_id = item[1] # Segundo valor es ID
+                path = item[2]   # Tercer valor es Ruta
+                # item[3] is duration, we can ignore it for now
+                # Clean up path if it has incorrect .mp3 extension from old index build
+                if path.lower().endswith('.mp3'):
+                    # Check if it's actually an image with .mp3 appended
+                    base_name = path[:-4]
+                    if any(base_name.lower().endswith(ext) for ext in ('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
+                        path = base_name
+
+                # Si viene item[3] (duración), lo ignoramos y no da error.
                 # Get relative path from media directory
                 try:
                     # path is absolute, we need relative from media_dir
@@ -295,8 +305,9 @@ def register_multimedia_routes(app, DATA_DIR):
                     # Fallback to just filename
                     relative_path = os.path.basename(path)
 
-                # Calculate similarity percentage
-                similarity = max(0.0, 1.0 - float(dist))
+                # Calculate similarity percentage using inverse distance
+                # This ensures we don't get 0% just because distance > 1.0
+                similarity = 1.0 / (1.0 + float(dist))
 
                 formatted_results.append({
                     "rank": rank,
@@ -305,7 +316,6 @@ def register_multimedia_routes(app, DATA_DIR):
                     "distance": float(dist),
                     "similarity": similarity
                 })
-
             return {
                 "ok": True,
                 "results": formatted_results,
@@ -365,6 +375,7 @@ def register_multimedia_routes(app, DATA_DIR):
 
             use_tfidf = mm_codebook.idf is not None
             hist = mm_codebook.compute_histogram(desc, use_tfidf=use_tfidf)
+            hist = l2_normalize_vec(hist)
 
             # Method 1: Sequential KNN
             start_seq = time.time()
@@ -391,8 +402,8 @@ def register_multimedia_routes(app, DATA_DIR):
                 "ok": True,
                 "sequential": {
                     "time_seconds": time_seq,
-                    "results": [{"rank": i+1, "doc_id": doc_id, "filename": get_rel_path(path), "distance": float(dist), "similarity": max(0.0, 1.0 - float(dist))} 
-                               for i, (dist, doc_id, path) in enumerate(results_seq)]
+                    "results": [{"rank": i+1, "doc_id": doc_id, "filename": get_rel_path(path), "distance": float(dist), "similarity": 1.0 / (1.0 + float(dist))} 
+                               for i, (dist, doc_id, path, _) in enumerate(results_seq)]
                 },
                 "indexed": {
                     "time_seconds": time_inv,

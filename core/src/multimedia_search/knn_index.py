@@ -16,14 +16,6 @@ class KNNIndex:
         self.metadata: Dict[int, str] = {}
         
     def add_vector(self, doc_id: int, vector: np.ndarray, file_path: str):
-        # Ajusta la ruta del mp3 si solo viene el nombre
-        if not file_path.lower().endswith('.mp3'):
-            file_path = f"{file_path}.mp3"
-        # Corrige carpeta: debe ser media/songs/
-        if not os.path.sep in file_path:
-            file_path = os.path.join("media", "songs", file_path)
-        elif file_path.startswith("media/song/"):
-            file_path = file_path.replace("media/song/", "media/songs/")
         self.vectors[doc_id] = vector
         self.metadata[doc_id] = file_path
         

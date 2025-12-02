@@ -1,5 +1,5 @@
 import { Sidebar } from "@/components/sidebar"
-import { MultimediaSearch } from "@/components/multimedia-search"
+import MultimediaSearch from "@/components/multimedia-search"
 
 export default function MultimediaSearchPage() {
   return (
