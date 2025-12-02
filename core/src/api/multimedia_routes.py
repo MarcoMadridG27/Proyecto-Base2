@@ -17,25 +17,19 @@ from src.multimedia_search.feature_extractor import FeatureExtractor
 from src.multimedia_search.codebook import Codebook
 from src.multimedia_search.knn_index import KNNIndex
 from src.multimedia_search.visual_inverted_index import VisualInvertedIndex
-from src.multimedia_search.knn_sequential_audio import KNNSequentialAudio  # keep for image multimodal compatibility
+from src.multimedia_search.knn_sequential_audio import KNNSequentialAudio  
 from src.multimedia_search.knn_index_audio import KNNIndexAudio
 
-# Global multimedia instances
 mm_extractor = FeatureExtractor()
 mm_codebook: Optional[Codebook] = None
 mm_index: Optional[KNNIndex] = None
 mm_inverted_index: Optional[VisualInvertedIndex] = None
 
-# Add global instance for audio codebook
 mm_codebook_audio: Optional[Codebook] = None
 
-# Almacena los descriptores por frame para cada audio (lista de arrays (frames, dim))
-# Now we will use 10 frames x 13 MFCC per audio in CSV 'descriptors' field (light CSV)
-audio_descriptors_list = []      # used for index-building (Codebook.train, KNNIndexAudio.build_index)
-audio_index_paths = []           # lista de rutas (absolute or relative to media/)
-# Almacena histograms (TF-IDF normalizados) para búsqueda secuencial
-audio_histograms = []            # list of 1D np.arrays (vocab_size,)
-# KNN helpers
+audio_descriptors_list = []      
+audio_index_paths = []         
+audio_histograms = []          
 knn_sequential_audio: Optional[object] = None
 knn_index_audio: Optional[KNNIndexAudio] = None
 
@@ -53,8 +47,10 @@ def extract_audio_features(filepath: str, n_mfcc: int = 10, n_frames: int = 80):
         if y is None or len(y) == 0:
             return None
         mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc) 
+        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)  
         total_frames = mfcc.shape[1]
         if total_frames < n_frames:
+        
             mfcc = np.pad(mfcc, ((0, 0), (0, n_frames - total_frames)), mode='wrap')
             total_frames = n_frames
         indices = np.linspace(0, total_frames - 1, n_frames, dtype=int)
@@ -84,7 +80,6 @@ def _parse_vector_string(s: str):
 def register_multimedia_routes(app, DATA_DIR):
     """Register multimedia search endpoints to the FastAPI app"""
 
-    # Mount static files for serving images
     from fastapi.staticfiles import StaticFiles
     app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
 
@@ -99,7 +94,6 @@ def register_multimedia_routes(app, DATA_DIR):
         global mm_codebook, mm_index, mm_inverted_index
 
         try:
-            # Setup directories
             base_dir = os.path.join(DATA_DIR, f"mm_index_{index_name}")
             media_dir = os.path.join(base_dir, "media")
             os.makedirs(media_dir, exist_ok=True)
@@ -112,7 +106,6 @@ def register_multimedia_routes(app, DATA_DIR):
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(media_dir)
 
-            # Find all media files (images and audio)
             media_files = []
             image_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
 
@@ -124,7 +117,6 @@ def register_multimedia_routes(app, DATA_DIR):
             if not media_files:
                 return {"ok": False, "error": "No images found in ZIP"}
 
-            # 1. Extract Features
             start_time = time.time()
             print(f"Extracting features from {len(media_files)} files...")
 
@@ -147,42 +139,34 @@ def register_multimedia_routes(app, DATA_DIR):
             if not descriptors_list:
                 return {"ok": False, "error": "Could not extract features from any file"}
 
-            # 2. Train Codebook
             print(f"Training codebook with k={k}...")
             mm_codebook = Codebook(k=k)
             mm_codebook.train(descriptors_list)
 
-            # 3. Compute histograms for all files (without TF-IDF first)
             print("Computing histograms...")
             all_histograms = []
             for desc in descriptors_list:
                 hist = mm_codebook.compute_histogram(desc, use_tfidf=False)
                 all_histograms.append(hist)
 
-            # 4. Build IDF if using TF-IDF
             if use_tfidf:
                 print("Building IDF weights...")
                 mm_codebook.build_idf(all_histograms)
-                # Recompute histograms with TF-IDF
                 all_histograms = []
                 for desc in descriptors_list:
                     hist = mm_codebook.compute_histogram(desc, use_tfidf=True)
                     all_histograms.append(hist)
 
-            # Normalize histograms (L2) for cosine similarity where appropriate
             all_histograms = [l2_normalize_vec(h) for h in all_histograms]
 
-            # Save codebook
             mm_codebook.save(os.path.join(base_dir, "codebook.pkl"))
 
-            # 13. Build KNN Sequential Index (generic multimodal index)
             print("Building KNN sequential index...")
             mm_index = KNNIndex(index_dir=base_dir)
             for idx, (path, hist) in enumerate(zip(valid_paths, all_histograms)):
                 mm_index.add_vector(idx + 1, hist, path)
             mm_index.save()
 
-            # 6. Build Inverted Index
             print("Building inverted index...")
             mm_inverted_index = VisualInvertedIndex(index_dir=base_dir)
             for idx, (path, hist) in enumerate(zip(valid_paths, all_histograms)):
@@ -415,7 +399,7 @@ def register_multimedia_routes(app, DATA_DIR):
             return {"ok": False, "error": str(e)}
 
 # -----------------------
-    # AUDIO-SPECIFIC ENDPOINTS
+    # AUDIO
     # -----------------------
     @app.post("/multimedia/audio/build_index")
     def build_audio_index(
@@ -427,6 +411,7 @@ def register_multimedia_routes(app, DATA_DIR):
         use_server_csv: bool = Form(False),
     ):
 
+
         global audio_descriptors_list, audio_index_paths, audio_histograms
         global mm_codebook_audio, knn_index_audio, knn_sequential_audio
 
@@ -436,7 +421,7 @@ def register_multimedia_routes(app, DATA_DIR):
             os.makedirs(media_dir, exist_ok=True)
 
             csv_path = os.path.join(base_dir, "audio_dataset.csv")
-            #mi archiv  csv
+
             mp3_list = []
             if file is not None:
                 print(f"[AUDIO BUILD] Uploading CSV file...")
@@ -457,7 +442,6 @@ def register_multimedia_routes(app, DATA_DIR):
                         if mp3_field and str(mp3_field).strip():
                             mp3_list.append(str(mp3_field).strip())
 
-            # If mp3_list empty => scan media_dir for audio files
             if not mp3_list:
                 audio_extensions = ('.wav', '.mp3', '.flac', '.ogg', '.m4a')
 
@@ -501,8 +485,7 @@ def register_multimedia_routes(app, DATA_DIR):
                         desc = None
 
                 if desc is None:
-                    print(f"[AUDIO BUILD] Extracting descriptors from audio file: {abs_path}")
-                    desc = extract_audio_features(abs_path, n_mfcc=10, n_frames=80)
+                    desc = extract_audio_features(abs_path, n_mfcc=10, n_frames=40)
 
                 if desc is None or desc.shape[0] == 0:
                     print(f"[AUDIO BUILD] Could not extract descriptors for {abs_path}")
@@ -566,7 +549,7 @@ def register_multimedia_routes(app, DATA_DIR):
         file: UploadFile = File(...),
         top_k: int = Form(13),
         index_name: str = Form("default"),
-        method: str = Form("sequential")
+        method: str = Form("sequential")  
     ):
         global audio_descriptors_list, audio_index_paths, audio_histograms
         global mm_codebook_audio, knn_index_audio
@@ -659,15 +642,10 @@ def register_multimedia_routes(app, DATA_DIR):
         dataset_name: str = Form(...),
         top_k: int = Form(5)
     ):
-        """
-        Perform direct sequential search on a dataset without pre-indexing.
-        Extracts features on-the-fly.
-        """
+
         global mm_codebook
         
-        # Ensure codebook is loaded (we need it for histograms)
         if mm_codebook is None:
-            # Try to load default codebook from 'img' or 'imagenes'
             possible_indexes = ["img", "imagenes", "default"]
             loaded = False
             for idx_name in possible_indexes:
@@ -686,15 +664,12 @@ def register_multimedia_routes(app, DATA_DIR):
                 return {"ok": False, "error": "No default codebook found. Please build an index first (e.g., 'img')."}
 
         try:
-            # 1. Save query
             temp_query_path = os.path.join(DATA_DIR, f"temp_direct_query_{file.filename}")
             with open(temp_query_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
 
-            # 2. Extract query features
             start_total = time.time()
             
-            # Detect type
             is_audio = temp_query_path.lower().endswith(('.wav', '.mp3', '.flac'))
             
             if is_audio:
@@ -706,18 +681,16 @@ def register_multimedia_routes(app, DATA_DIR):
                 os.remove(temp_query_path)
                 return {"ok": False, "error": "Could not extract features from query"}
 
-            # Compute query histogram
             use_tfidf = mm_codebook.idf is not None
             query_hist = mm_codebook.compute_histogram(query_desc, use_tfidf=use_tfidf)
             query_hist = l2_normalize_vec(query_hist)
 
-            # 3. Process Dataset
+   
             dataset_path = os.path.join("datasets_para_experimentos", dataset_name)
             if not os.path.exists(dataset_path):
                 os.remove(temp_query_path)
                 return {"ok": False, "error": f"Dataset {dataset_name} not found"}
 
-            # Create temp dir for extraction
             temp_extract_dir = os.path.join(DATA_DIR, "temp_direct_extract")
             if os.path.exists(temp_extract_dir):
                 shutil.rmtree(temp_extract_dir)
@@ -727,10 +700,10 @@ def register_multimedia_routes(app, DATA_DIR):
             with zipfile.ZipFile(dataset_path, 'r') as zip_ref:
                 zip_ref.extractall(temp_extract_dir)
 
-            # 4. Sequential Scan
+            # 4. Sequential 
             results = []
             file_list = []
-            # Walk through temp dir
+   
             for root, dirs, files in os.walk(temp_extract_dir):
                 for filename in files:
                     if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.wav', '.mp3')):
@@ -740,7 +713,7 @@ def register_multimedia_routes(app, DATA_DIR):
             
             for file_path in file_list:
                 try:
-                    # Extract features
+                  
                     if is_audio:
                         desc = extract_audio_features(file_path, n_mfcc=10, n_frames=80)
                     else:
@@ -749,11 +722,10 @@ def register_multimedia_routes(app, DATA_DIR):
                     if desc is None:
                         continue
 
-                    # Histogram
                     hist = mm_codebook.compute_histogram(desc, use_tfidf=use_tfidf)
                     hist = l2_normalize_vec(hist)
 
-                    # Distance (Chi-Squared)
+               
                     eps = 1e-10
                     d = 0.5 * np.sum(((query_hist - hist) ** 2) / (query_hist + hist + eps))
                     
@@ -763,13 +735,11 @@ def register_multimedia_routes(app, DATA_DIR):
                     print(f"Error processing {file_path}: {e}")
                     continue
 
-            # Sort by distance
             results.sort(key=lambda x: x[0])
             top_results = results[:top_k]
 
             total_time = time.time() - start_total
 
-            # Format results and encode images
             formatted = []
             import base64
             
@@ -777,7 +747,6 @@ def register_multimedia_routes(app, DATA_DIR):
                 rel_name = os.path.basename(path)
                 sim = 1.0 / (1.0 + float(dist))
                 
-                # Encode image to base64
                 img_b64 = None
                 try:
                     with open(path, "rb") as img_file:
@@ -793,7 +762,6 @@ def register_multimedia_routes(app, DATA_DIR):
                     "image_base64": img_b64
                 })
 
-            # Cleanup
             os.remove(temp_query_path)
             shutil.rmtree(temp_extract_dir)
 
