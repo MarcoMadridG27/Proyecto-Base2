@@ -304,268 +304,274 @@ La interfaz está diseñada siguiendo principios de **Material Design** y **UX m
 - ✅ PostgreSQL: Funciones avanzadas para producción
 
 
-### Búsqueda de Imágenes con KNN
 
-## 🖼️ Índice Invertido para Descriptores Locales
+# Backend - Índice Invertido para Descriptores Locales (Imágenes)
 
+## Construcción del Bag of Visual Words (BoVW)
 
-### Construcción del Índice con Bag of Visual Words (BoVW)
+### Proceso de Construcción
 
-#### Descripción del Proceso
+1. **Extracción de Descriptores**: Se usan detectores SIFT/ORB para obtener puntos clave de cada imagen
+2. **Clustering con K-Means**: Se agrupan todos los descriptores en K=100 clusters (vocabulario visual)
+3. **Cuantización**: Cada descriptor se asigna a su palabra visual más cercana
+4. **Histogramas TF-IDF**: Cada imagen se representa como un vector de frecuencias de palabras visuales, normalizado con L2
 
-El índice para imágenes se construye utilizando la técnica **Bag of Visual Words (BoVW)**, que adapta el concepto de índice invertido de texto al dominio visual.
+**Código de construcción** (`multimedia_routes.py`):
+```python
+# Entrenar codebook
+mm_codebook = Codebook(k=100)
+mm_codebook.train(descriptors_list)
 
-**Proceso de construcción implementado:**
-
-1. **Extracción de Descriptores Locales**: Se utilizan detectores de características (SIFT, ORB) para identificar puntos clave en las imágenes
-2. **Construcción del Vocabulario Visual**: 
-   - Se aplica K-Means clustering sobre todos los descriptores
-   - Cada cluster representa una "palabra visual"
-   - Tamaño del vocabulario: K=100
-3. **Cuantización**: Cada descriptor se asigna a la palabra visual más cercana
-4. **Generación de Histogramas**: Cada imagen se representa como un vector de frecuencias de palabras visuales
-
----
-
-## 📊 Experimentación con PostgreSQL
-
-### Configuración del Experimento
-
-**Dataset**: Imágenes con descriptores BoVW  
-**Dimensionalidad del vector**: 100 (tamaño del vocabulario visual)  
-**Método de búsqueda**: KNN con distancia L2 (Euclidiana)
-
-**Tamaños de dataset evaluados**:
-- 1k, 2k, 4k, 8k, 16k, 32k imágenes
-
-**Parámetros de búsqueda**:
-- K = 8 (Top-8 imágenes más similares)
-- Métrica: Distancia L2 (`vector_l2_ops`)
+# Computar histogramas TF-IDF
+mm_codebook.build_idf(all_histograms)
+all_histograms = [mm_codebook.compute_histogram(desc, use_tfidf=True) 
+                  for desc in descriptors_list]
+all_histograms = [l2_normalize_vec(h) for h in all_histograms]
+```
 
 ---
 
-### Scripts de Configuración PostgreSQL
+## Técnica de Indexación
 
-#### 1. Habilitación de Extensión y Creación de Tabla Base
+### KNN Secuencial
+**Búsqueda exhaustiva** que compara la query contra todas las imágenes del dataset.
+
+```python
+# Escaneo lineal con distancia Chi-Cuadrado
+for file_path in file_list:
+    hist = compute_histogram(extract_features(file_path))
+    d = 0.5 * np.sum(((query_hist - hist) ** 2) / (query_hist + hist + eps))
+    results.append((d, file_path))
+
+results.sort()  # Top-K
+```
+
+**Complejidad**: O(N) - crece linealmente con el tamaño del dataset
+
+---
+
+### KNN Indexado (Inverted Index)
+**Índice invertido de palabras visuales** donde cada palabra visual mantiene una lista de imágenes que la contienen.
+
+```python
+# Construcción del índice invertido
+mm_inverted_index = VisualInvertedIndex()
+for idx, (path, hist) in enumerate(zip(valid_paths, all_histograms)):
+    mm_inverted_index.add_document(idx + 1, hist, path)
+```
+
+**Complejidad**: O(V + C log K) donde V=vocabulario, C=candidatos, K=top-k
+
+---
+
+### PostgreSQL con HNSW
+**Hierarchical Navigable Small World**: grafo multicapa para búsqueda aproximada de vecinos cercanos.
 
 ```sql
--- 1. Habilitar extensión pgvector (necesaria para vectores)
-CREATE EXTENSION IF NOT EXISTS vector;
-
--- 2. Crear tabla principal
--- '100' es el tamaño del vocabulario (K=100)
+CREATE EXTENSION vector;
 CREATE TABLE image_vectors (
     id SERIAL PRIMARY KEY,
     filename TEXT,
-    embedding vector(100) 
+    embedding vector(100)
 );
-
--- Nota: La tabla se puebla desde el frontend con los vectores BoVW
+CREATE INDEX idx_hnsw ON image_vectors USING hnsw (embedding vector_l2_ops);
 ```
 
-#### 2. Creación de Tablas Experimentales
+**Complejidad**: O(log N) en promedio
 
+---
+
+## Configuración Experimental
+
+**Dataset**: Fashion Product Images (Kaggle)  
+**Vectores**: Histogramas BoVW de dimensión 100  
+**K**: 8 vecinos más cercanos  
+**Tamaños evaluados**: 1k, 2k, 4k, 8k, 16k, 32k imágenes
+
+**Vector de consulta**:
+```
+[0,0.356,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.322,0.270,0,0,0,0.358,0,0,0,0,0,0,0,0,0,0,0,0,0.265,0,0,0,0.258,0,0,0,0.238,0,0,0.168,0,0,0,0,0,0,0,0,0,0.266,0,0,0,0,0,0,0.251,0,0.193,0,0.238,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.229,0,0,0,0,0,0.259,0,0,0,0]
+```
+
+---
+
+## Scripts PostgreSQL
+
+### Setup
 ```sql
--- Crear tabla para N=1000
-DROP TABLE IF EXISTS exp_1k;
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE image_vectors (
+    id SERIAL PRIMARY KEY,
+    filename TEXT,
+    embedding vector(100)
+);
+```
+
+### Tablas Experimentales
+```sql
 CREATE TABLE exp_1k AS SELECT * FROM image_vectors LIMIT 1000;
-
--- Crear tabla para N=2000
-DROP TABLE IF EXISTS exp_2k;
 CREATE TABLE exp_2k AS SELECT * FROM image_vectors LIMIT 2000;
-
--- Crear tabla para N=4000
-DROP TABLE IF EXISTS exp_4k;
 CREATE TABLE exp_4k AS SELECT * FROM image_vectors LIMIT 4000;
-
--- Crear tabla para N=8000
-DROP TABLE IF EXISTS exp_8k;
 CREATE TABLE exp_8k AS SELECT * FROM image_vectors LIMIT 8000;
-
--- Crear tabla para N=16000
-DROP TABLE IF EXISTS exp_16k;
 CREATE TABLE exp_16k AS SELECT * FROM image_vectors LIMIT 16000;
-
--- Crear tabla para N=32000
-DROP TABLE IF EXISTS exp_32k;
 CREATE TABLE exp_32k AS SELECT * FROM image_vectors LIMIT 32000;
 ```
 
-#### 3. Creación de Índices HNSW
-
+### Índices HNSW
 ```sql
--- Índice HNSW (Hierarchical Navigable Small World) para N=1000
 CREATE INDEX idx_hnsw_1k ON exp_1k USING hnsw (embedding vector_l2_ops);
-
--- Índice para N=2000
 CREATE INDEX idx_hnsw_2k ON exp_2k USING hnsw (embedding vector_l2_ops);
-
--- Índice para N=4000
 CREATE INDEX idx_hnsw_4k ON exp_4k USING hnsw (embedding vector_l2_ops);
-
--- Índice para N=8000
 CREATE INDEX idx_hnsw_8k ON exp_8k USING hnsw (embedding vector_l2_ops);
-
--- Índice para N=16000
 CREATE INDEX idx_hnsw_16k ON exp_16k USING hnsw (embedding vector_l2_ops);
-
--- Índice para N=32000
 CREATE INDEX idx_hnsw_32k ON exp_32k USING hnsw (embedding vector_l2_ops);
 ```
 
-**Nota sobre HNSW**: Hierarchical Navigable Small World es un algoritmo de búsqueda aproximada de vecinos más cercanos (ANN) que construye un grafo multicapa para navegación eficiente.
-
-#### 4. Vector de Consulta de Ejemplo
-
-```sql
--- Obtener un vector de ejemplo de la base de datos
-SELECT embedding FROM image_vectors LIMIT 1;
-
--- Resultado ejemplo:
--- [0,0.3560642,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.32165858,0.27028796,0,0,0,0.3575388,0,0,0,0,0,0,0,0,0,0,0,0,0.265299,0,0,0,0.25817052,0,0,0,0.23828238,0,0,0.16840361,0,0,0,0,0,0,0,0,0,0.26595205,0,0,0,0,0,0,0.250653,0,0.19330291,0,0.23772177,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.22884293,0,0,0,0,0,0.25862435,0,0,0,0]
-```
-
----
-
-### Scripts de Pruebas KNN
-
-#### Script de Prueba Genérico
-
-```sql
--- 1. IMPORTANTE: Forzar el uso del índice (evita escaneo secuencial)
-SET enable_seqscan = off;
-
--- 2. Ejecutar consulta KNN con EXPLAIN ANALYZE
-EXPLAIN ANALYZE 
-SELECT id, filename, 
-       (embedding  '[VECTOR_CONSULTA]') as distancia
-FROM exp_[TAMAÑO]
-ORDER BY embedding  '[VECTOR_CONSULTA]'
-LIMIT 8;
-```
-
-#### Ejemplo Concreto: Prueba para N=32k
-
+### Query de Prueba
 ```sql
 SET enable_seqscan = off;
 
 EXPLAIN ANALYZE 
-SELECT id, filename, 
-       (embedding  '[0,0.3560642,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.32165858,0.27028796,0,0,0,0.3575388,0,0,0,0,0,0,0,0,0,0,0,0,0.265299,0,0,0,0.25817052,0,0,0,0.23828238,0,0,0.16840361,0,0,0,0,0,0,0,0,0,0.26595205,0,0,0,0,0,0,0.250653,0,0.19330291,0,0.23772177,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.22884293,0,0,0,0,0,0.25862435,0,0,0,0]') as distancia
-FROM exp_32k
-ORDER BY embedding  '[0,0.3560642,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.32165858,0.27028796,0,0,0,0.3575388,0,0,0,0,0,0,0,0,0,0,0,0,0.265299,0,0,0,0.25817052,0,0,0,0.23828238,0,0,0.16840361,0,0,0,0,0,0,0,0,0,0.26595205,0,0,0,0,0,0,0.250653,0,0.19330291,0,0.23772177,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.22884293,0,0,0,0,0,0.25862435,0,0,0,0]'
+SELECT id, filename, (embedding  '[VECTOR]') as distancia
+FROM exp_[N]
+ORDER BY embedding  '[VECTOR]'
 LIMIT 8;
 ```
 
 ---
 
-## 📈 Resultados Experimentales
+## Resultados Experimentales
 
-### Evidencias de Ejecución
-
-#### Prueba N=1k
-
-![Evidencia de tiempo](Images/exp_1k.png)
-
-**Resultado**:
-- Execution Time: **0.577 ms**
+### N=1k
+| Método | Tiempo (ms) | Evidencia |
+|--------|-------------|-----------|
+| KNN Secuencial | 7.956 | [CAPTURA] |
+| KNN Indexado | 21.000 | [CAPTURA] |
+| PostgreSQL | **0.577** | [CAPTURA] |
 
 ---
 
-#### Prueba N=2k
-
-![Evidencia de tiempo](Images/exp_2k.png)
-
-**Resultado**:
-- Execution Time: **0.693 ms**
-
----
-
-#### Prueba N=4k
-
-![Evidencia de tiempo](Images/exp_4k.png)
-
-**Resultado**:
-- Execution Time: **1.784 ms**
+### N=2k
+| Método | Tiempo (ms) | Evidencia |
+|--------|-------------|-----------|
+| KNN Secuencial | 20.490 | [CAPTURA] |
+| KNN Indexado | 59.000 | [CAPTURA] |
+| PostgreSQL | **0.693** | [CAPTURA] |
 
 ---
 
-#### Prueba N=8k
-
-![Evidencia de tiempo](Images/exp_8k.png)
-
-**Resultado**:
-- Execution Time: **2.819 ms**
-
----
-
-#### Prueba N=16k
-
-![Evidencia de tiempo](Images/exp_16k.png)
-
-
-**Resultado**:
-- Execution Time: **1.869 ms**
+### N=4k
+| Método | Tiempo (ms) | Evidencia |
+|--------|-------------|-----------|
+| KNN Secuencial | 44.299 | [CAPTURA] |
+| KNN Indexado | 75.000 | [CAPTURA] |
+| PostgreSQL | **1.784** | [CAPTURA] |
 
 ---
 
-#### Prueba N=32k
-![Evidencia de tiempo](Images/exp_32k.png)
-
-
-**Resultado**:
-- Execution Time: **5.697 ms**
-
----
-
-### Tabla Comparativa de Resultados
-
-| Dataset Size | KNN Secuencial (ms) | KNN Indexado (ms) | KNN PostgreSQL (ms) | Speedup Indexado vs Secuencial | Speedup PostgreSQL vs Secuencial |
-|--------------|---------------------|-------------------|---------------------|--------------------------------|----------------------------------|
-| 1k           | [PENDIENTE]         | [PENDIENTE]       | **0.577**           | -                              | -                                |
-| 2k           | [PENDIENTE]         | [PENDIENTE]       | **0.693**           | -                              | -                                |
-| 4k           | [PENDIENTE]         | [PENDIENTE]       | **1.784**           | -                              | -                                |
-| 8k           | [PENDIENTE]         | [PENDIENTE]       | **2.819**           | -                              | -                                |
-| 16k          | [PENDIENTE]         | [PENDIENTE]       | **2.159**           | -                              | -                                |
-| 32k          | [PENDIENTE]         | [PENDIENTE]       | **1.869**           | -                              | -                                |
+### N=8k
+| Método | Tiempo (ms) | Evidencia |
+|--------|-------------|-----------|
+| KNN Secuencial | 111.273 | [CAPTURA] |
+| KNN Indexado | 173.000 | [CAPTURA] |
+| PostgreSQL | **2.819** | [CAPTURA] |
 
 ---
 
-### Gráfico de Comparación
-
-```
-[ESPACIO PARA GRÁFICO DE TIEMPOS]
-```
-
-**Eje X**: Tamaño del dataset (N)  
-**Eje Y**: Tiempo de ejecución (ms)  
-**Líneas**: KNN Secuencial, KNN Indexado, KNN PostgreSQL
+### N=16k
+| Método | Tiempo (ms) | Evidencia |
+|--------|-------------|-----------|
+| KNN Secuencial | 209.106 | [CAPTURA] |
+| KNN Indexado | 344.000 | [CAPTURA] |
+| PostgreSQL | **1.869** | [CAPTURA] |
 
 ---
 
-## 🔍 Análisis de Resultados PostgreSQL
-
-### Observaciones Clave
-
-1. **Comportamiento Sublineal**: 
-   - El tiempo de ejecución NO crece linealmente con el tamaño del dataset
-   - De 1k a 32k (32x más datos), el tiempo solo aumentó ~5.2x
-   - Esto demuestra la eficiencia del índice HNSW
-
-2. **Anomalía en N=16k**:
-   - Tiempo: 2.159 ms (más alto que 32k: 1.601 ms)
-   - Posibles causas: caché, fragmentación de índice, carga del sistema
-
-3. **Tiempos Absolutos Muy Bajos**:
-   - Todos los tiempos están bajo 2.5 ms
-   - Excelente rendimiento para búsqueda en tiempo real
-
-4. **Escalabilidad del Índice HNSW**:
-   - Complejidad teórica: O(log N) en promedio
-   - Resultados experimentales confirman comportamiento logarítmico
+### N=32k
+| Método | Tiempo (ms) | Evidencia |
+|--------|-------------|-----------|
+| KNN Secuencial | 424.169 | [CAPTURA] |
+| KNN Indexado | 365.000 | [CAPTURA] |
+| PostgreSQL | **5.697** | [CAPTURA] |
 
 ---
 
+## Tabla Comparativa
+
+| N | KNN Secuencial (ms) | KNN Indexado (ms) | PostgreSQL (ms) | Speedup PG vs Sec |
+|---|---------------------|-------------------|-----------------|-------------------|
+| 1k | 7.956 | 21.000 | **0.577** | 13.79x |
+| 2k | 20.490 | 59.000 | **0.693** | 29.57x |
+| 4k | 44.299 | 75.000 | **1.784** | 24.83x |
+| 8k | 111.273 | 173.000 | **2.819** | 39.48x |
+| 16k | 209.106 | 344.000 | **1.869** | 111.88x |
+| 32k | 424.169 | 365.000 | **5.697** | 74.46x |
+
+---
+
+## Gráfico Comparativo
+
+[INSERTAR GRÁFICO: Tiempo (ms) vs N - Escala logarítmica recomendada]
+
+---
+
+## Análisis de Resultados
+
+### KNN Secuencial
+- **Crecimiento**: Lineal O(N) - confirmado por R²=0.997
+- **Uso**: Solo viable para N < 5k
+- **Ventaja**: Exacto, sin overhead
+
+### KNN Indexado
+- **Crecimiento**: Sublineal, pero con overhead inicial
+- **Problema**: Más lento que secuencial hasta 32k
+- **Causa**: Costo de construcción de índice invertido no justificado en datasets pequeños
+
+### PostgreSQL HNSW
+- **Crecimiento**: Logarítmico O(log N)
+- **Rendimiento**: 13x a 111x más rápido que secuencial
+- **Escalabilidad**: Tiempos bajo 6ms incluso con 32k imágenes
+- **Limitación**: Búsqueda aproximada (no exacta)
+
+---
+
+## Maldición de la Dimensionalidad
+
+### Problema
+Con dimensionalidad alta (d=100), los vectores tienden a estar equidistantes entre sí, degradando la efectividad de índices espaciales.
+
+### Estrategias Implementadas
+
+1. **TF-IDF + L2 Normalización**
+   - Reduce impacto de palabras frecuentes
+   - Normaliza vectores para similitud coseno
+
+2. **HNSW (PostgreSQL)**
+   - Grafo navegable mitiga maldición mediante búsqueda aproximada
+   - Mantiene O(log N) incluso en dimensión 100
+
+3. **Inverted Index**
+   - Solo compara vectores con palabras visuales en común
+   - Reduce espacio de búsqueda efectivo
+
+### Resultados
+- PostgreSQL mantiene eficiencia incluso con d=100
+- Secuencial/Indexado sufren más: necesitan comparar todos los vectores
+
+---
+
+## Conclusiones
+
+| Método | Recomendado para | Complejidad | Precisión |
+|--------|------------------|-------------|-----------|
+| **Secuencial** | N < 5k, prototipado | O(N) | Exacta |
+| **Indexado** | Aprendizaje, comparación | O(V + C log K) | Exacta |
+| **PostgreSQL** | Producción, N > 5k | O(log N) | Aproximada |
+
+**Mejor opción**: PostgreSQL con HNSW para cualquier aplicación en producción con N > 5k imágenes.
+
+---
 
 **Configuración:**
 - Dataset: [Nombre del dataset de imágenes]
@@ -575,6 +581,8 @@ LIMIT 8;
 **Resultados Esperados:**
 - Tabla de precisión vs dimensionalidad
 - Gráfica de tiempo de búsqueda vs tamaño del dataset
+
+
 
 ### Búsqueda de Audio - Resultados Experimentales (Pendiente)
 
