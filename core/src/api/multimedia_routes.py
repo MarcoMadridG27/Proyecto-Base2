@@ -410,8 +410,6 @@ def register_multimedia_routes(app, DATA_DIR):
         csv_encoding: str = Form("utf-8"),
         use_server_csv: bool = Form(False),
     ):
-
-
         global audio_descriptors_list, audio_index_paths, audio_histograms
         global mm_codebook_audio, knn_index_audio, knn_sequential_audio
 
@@ -423,99 +421,116 @@ def register_multimedia_routes(app, DATA_DIR):
             csv_path = os.path.join(base_dir, "audio_dataset.csv")
 
             mp3_list = []
+
             if file is not None:
-                print(f"[AUDIO BUILD] Uploading CSV file...")
+                print("[AUDIO BUILD] Uploading CSV...")
                 with open(csv_path, "wb") as buffer:
                     shutil.copyfileobj(file.file, buffer)
             else:
                 if not (use_server_csv and os.path.exists(csv_path)):
-                    print("[AUDIO BUILD] No CSV provided; scanning media directory for audio files.")
+                    print("[AUDIO BUILD] No CSV provided; scanning for audio files.")
                 else:
-                    print(f"[AUDIO BUILD] Using server CSV from: {csv_path}")
+                    print(f"[AUDIO BUILD] Using server CSV: {csv_path}")
+
+            csv_data = {}
 
             if os.path.exists(csv_path):
-                print(f"[AUDIO BUILD] Parsing CSV from: {csv_path}")
+                print(f"[AUDIO BUILD] Loading CSV ONE TIME into memory...")
+
                 with open(csv_path, "r", encoding=csv_encoding, errors="ignore") as fh:
-                    reader = csv.DictReader(fh, delimiter=",")
-                    for row_idx, row in enumerate(reader):
-                        mp3_field = row.get("mp3") or row.get("mp3_path") or row.get("audio") or row.get("file")
-                        if mp3_field and str(mp3_field).strip():
-                            mp3_list.append(str(mp3_field).strip())
+                    reader = csv.DictReader(fh)
+                    for row in reader:
+                        mp3_field = (
+                            row.get("mp3")
+                            or row.get("mp3_path")
+                            or row.get("audio")
+                            or row.get("file")
+                        )
+
+                        desc_field = (
+                            row.get("descriptors")
+                            or row.get("descriptores")
+                            or row.get("mfcc_frames")
+                        )
+
+                        if mp3_field and desc_field:
+                            try:
+                                arr = np.array(json.loads(desc_field), dtype=np.float32)
+                                csv_data[mp3_field.strip()] = arr
+                            except:
+                                pass
+
+            if os.path.exists(csv_path) and csv_data:
+                print("[AUDIO BUILD] Extracting paths from CSV...")
+                mp3_list = list(csv_data.keys())
 
             if not mp3_list:
-                audio_extensions = ('.wav', '.mp3', '.flac', '.ogg', '.m4a')
-
-                mp3_list = []
-                with os.scandir(media_dir) as entries:
-                    for entry in entries:
-                        if entry.is_file() and entry.name.lower().endswith(audio_extensions):
-                            rel = os.path.relpath(entry.path, media_dir)
-                            mp3_list.append(rel)
+                print("[AUDIO BUILD] Scanning media directory for audio files...")
+                audio_ext = (".mp3", ".wav", ".ogg", ".m4a", ".flac")
+                for entry in os.scandir(media_dir):
+                    if entry.is_file() and entry.name.lower().endswith(audio_ext):
+                        mp3_list.append(entry.name)
 
             if not mp3_list:
-                return {"ok": False, "error": f"No audio files found in media dir ({media_dir}) and no CSV entries provided."}
+                return {"ok": False, "error": "No audio files found."}
 
+            # EXTRAER DESCRIPTORES
             descriptors_list = []
             paths = []
-            n_missing = 0
-            for rel_path in mp3_list:
-                abs_path = os.path.join(media_dir, rel_path)
+            missing = 0
+
+            print(f"[AUDIO BUILD] Processing {len(mp3_list)} audios...")
+
+            for rel in mp3_list:
+                abs_path = os.path.join(media_dir, rel)
+
                 if not os.path.exists(abs_path):
-                    print(f"[AUDIO BUILD] Warning: audio file not found: {abs_path}")
-                    n_missing += 1
+                    print(f"[AUDIO BUILD] Missing file: {abs_path}")
+                    missing += 1
                     continue
 
-                desc = None
-                if os.path.exists(csv_path):
-                    try:
-                        with open(csv_path, "r", encoding=csv_encoding, errors="ignore") as fh:
-                            reader = csv.DictReader(fh, delimiter=",")
-                            for row in reader:
-                                mp3_field = row.get("mp3") or row.get("mp3_path") or row.get("audio") or row.get("file")
-                                if mp3_field and mp3_field.strip() == rel_path:
-                                    desc_field = row.get("descriptors") or row.get("descriptores") or row.get("mfcc_frames")
-                                    if desc_field:
-                                        try:
-                                            arr = json.loads(desc_field)
-                                            desc = np.array(arr, dtype=np.float32)
-                                        except Exception:
-                                            desc = None
-                                    break
-                    except Exception:
-                        desc = None
+                # 1) SI EXISTE EN CSV → USARLO DIRECTO
+                desc = csv_data.get(rel, None)
 
+                # 2) SI NO EXISTE → EXTRAER MFCC
                 if desc is None:
                     desc = extract_audio_features(abs_path, n_mfcc=10, n_frames=40)
 
                 if desc is None or desc.shape[0] == 0:
                     print(f"[AUDIO BUILD] Could not extract descriptors for {abs_path}")
-                    n_missing += 1
+                    missing += 1
                     continue
 
                 descriptors_list.append(desc)
-                rel = os.path.relpath(abs_path, media_dir).replace("\\", "/")
-                paths.append(rel)
-
+                paths.append(rel.replace("\\", "/"))
 
             if not descriptors_list:
-                return {"ok": False, "error": "No valid audio descriptors extracted. Check files and format."}
+                return {"ok": False, "error": "No valid descriptors extracted."}
 
+            # CODEBOOK + HISTOGRAMS
+            print("[AUDIO BUILD] Training Codebook...")
             mm_codebook_audio = Codebook(k=k)
             mm_codebook_audio.train(descriptors_list)
 
-            print("[AUDIO BUILD] Computing TF histograms for each audio...")
-            hist_tf = [mm_codebook_audio.compute_histogram(desc, use_tfidf=False) for desc in descriptors_list]
+            print("[AUDIO BUILD] Computing TF histograms...")
+            hist_tf = [
+                mm_codebook_audio.compute_histogram(desc, use_tfidf=False)
+                for desc in descriptors_list
+            ]
 
             if use_tfidf:
-                print("[AUDIO BUILD] Building IDF and recomputing TF-IDF histograms...")
+                print("[AUDIO BUILD] Building IDF and TF-IDF histograms...")
                 mm_codebook_audio.build_idf(hist_tf)
-                hist_tfidf = [mm_codebook_audio.compute_histogram(desc, use_tfidf=True) for desc in descriptors_list]
+                hist_tfidf = [
+                    mm_codebook_audio.compute_histogram(desc, use_tfidf=True)
+                    for desc in descriptors_list
+                ]
             else:
                 hist_tfidf = hist_tf
 
             hist_tfidf = [l2_normalize_vec(h) for h in hist_tfidf]
 
-            os.makedirs(base_dir, exist_ok=True)
+            # Save codebook
             codebook_path = os.path.join(base_dir, "codebook_audio.pkl")
             mm_codebook_audio.save(codebook_path)
 
@@ -523,7 +538,7 @@ def register_multimedia_routes(app, DATA_DIR):
             audio_index_paths = paths
             audio_histograms = hist_tfidf
 
-            print("[AUDIO BUILD] Building inverted index structure for audio search...")
+            print("[AUDIO BUILD] Building Inverted Index...")
             knn_index_audio = KNNIndexAudio()
             knn_index_audio.build_index(descriptors_list, paths, mm_codebook_audio)
 
@@ -531,12 +546,12 @@ def register_multimedia_routes(app, DATA_DIR):
                 "ok": True,
                 "message": "Audio index built successfully",
                 "stats": {
-                    "num_files_found_in_media": len(mp3_list),
+                    "total_audio_files": len(mp3_list),
                     "indexed_files": len(paths),
-                    "missing_files": n_missing,
+                    "missing_or_failed": missing,
                     "vocabulary_size": k,
-                    "use_tfidf": use_tfidf
-                }
+                    "use_tfidf": use_tfidf,
+                },
             }
 
         except Exception as e:
@@ -574,7 +589,9 @@ def register_multimedia_routes(app, DATA_DIR):
                     return {"ok": False, "error": "Audio codebook not found. Build the audio index first."}
                 mm_codebook_audio = Codebook()
                 mm_codebook_audio.load(codebook_path)
-
+            if knn_index_audio is None:
+                    knn_index_audio = KNNIndexAudio()
+                    knn_index_audio.build_index(audio_descriptors_list, audio_index_paths, mm_codebook_audio) 
             if method == "sequential":
                 start_time = time.time()
                 use_tfidf = mm_codebook_audio.idf is not None
@@ -598,11 +615,8 @@ def register_multimedia_routes(app, DATA_DIR):
                 ]
 
             elif method == "index":
+                
                 start_time = time.time()
-                if knn_index_audio is None:
-                    knn_index_audio = KNNIndexAudio()
-                    knn_index_audio.build_index(audio_descriptors_list, audio_index_paths, mm_codebook_audio)
-
                 results = knn_index_audio.search(query_descriptors, mm_codebook_audio, top_k=top_k)
                 search_time = time.time() - start_time 
                 formatted_results = [

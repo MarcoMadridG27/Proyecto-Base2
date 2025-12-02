@@ -1,102 +1,85 @@
+# src/multimedia_search/knn_index_audio.py
+
 import numpy as np
-import heapq
-from collections import defaultdict
+from typing import List, Tuple, Optional
+
+def l2_normalize_vec(v: np.ndarray) -> np.ndarray:
+    n = np.linalg.norm(v) + 1e-12
+    return v / n
 
 
 class KNNIndexAudio:
-    def __init__(self, sparsity_threshold=1e-5, top_n_words=8):
-        self.inverted = defaultdict(list)
-        self.doc_paths = []
-        self.doc_histograms = None
-        self.n_docs = 0
-        self.k = 0
 
-        # optimization parameters
-        self.sparsity_threshold = sparsity_threshold
-        self.top_n_words = top_n_words
+    def __init__(self):
+        self.doc_hist: Optional[np.ndarray] = None
+        self.paths: List[str] = []
+        self.k: Optional[int] = None
 
-    # ------------------------------------------------------------
-    # BUILD INDEX
-    # ------------------------------------------------------------
-    def build_index(self, descriptors_list, paths_list, codebook):
-        """
-        Build inverted index.
-        """
+    def build_index(
+        self,
+        descriptors_list: List[np.ndarray],
+        paths: List[str],
+        codebook
+    ) -> None:
 
-        self.n_docs = len(descriptors_list)
-        self.doc_paths = paths_list
-        self.k = codebook.k
+        if not descriptors_list or not paths:
+            raise ValueError("descriptors_list y paths no pueden estar vacíos.")
 
-        if self.n_docs == 0:
-            raise ValueError("No audio descriptors provided to build the index.")
+        if len(descriptors_list) != len(paths):
+            raise ValueError("descriptors_list y paths deben tener la misma longitud.")
 
-        print("[KNNIndexAudio] Computing optimized histograms...")
+        use_tfidf = getattr(codebook, "idf", None) is not None
 
-        use_tfidf = codebook.idf is not None
         hists = []
-
         for desc in descriptors_list:
-            h = codebook.compute_histogram(desc, use_tfidf=use_tfidf)
+            # desc: (num_frames, dim_mfcc)
+            hist = codebook.compute_histogram(desc, use_tfidf=use_tfidf)
+            hist = l2_normalize_vec(hist)
+            hists.append(hist.astype(np.float32))
 
-            # keep only top N entries (avoids dense postings)
-            top_idx = np.argsort(h)[-self.top_n_words:]
-            h_sparse = np.zeros_like(h)
-            h_sparse[top_idx] = h[top_idx]
+        # Matriz (N, k)
+        self.doc_hist = np.vstack(hists)
+        self.paths = list(paths)
+        self.k = self.doc_hist.shape[1]
 
-            # normalize for cosine
-            h_sparse /= (np.linalg.norm(h_sparse) + 1e-12)
+        print(f"[KNNIndexAudio] Index built: {self.doc_hist.shape[0]} audios, "
+              f"histogram dim = {self.k}")
 
-            hists.append(h_sparse)
+    def search(
+        self,
+        query_descriptors: np.ndarray,
+        codebook,
+        top_k: int = 10
+    ) -> List[Tuple[float, str]]:
 
-        self.doc_histograms = np.vstack(hists)
+        if self.doc_hist is None or not self.paths:
+            raise RuntimeError("KNNIndexAudio no está construido. Llama a build_index primero.")
 
-        # build inverted index
-        print("[KNNIndexAudio] Building inverted index (sparse)...")
+        use_tfidf = getattr(codebook, "idf", None) is not None
 
-        for doc_id, hist in enumerate(self.doc_histograms):
-            for w in np.nonzero(hist)[0]:
-                self.inverted[w].append((doc_id, float(hist[w])))
+        # 1. Histograma de la query
+        q_hist = codebook.compute_histogram(query_descriptors, use_tfidf=use_tfidf)
+        q_hist = l2_normalize_vec(q_hist).astype(np.float32)
 
-        print(f"[KNNIndexAudio] Done. Docs={self.n_docs}, Vocab={self.k}")
+        if q_hist.ndim == 2:
+            q_hist = q_hist.reshape(-1)  # a (k,)
 
-    # ------------------------------------------------------------
-    # SEARCH
-    # ------------------------------------------------------------
-    def search(self, query_descriptors, codebook, top_k=5):
-        if self.doc_histograms is None:
-            raise RuntimeError("Audio index not built.")
+        # 2. Producto punto con TODOS los audios de golpe
+        #    sims[i] = <q_hist, doc_hist[i]>
+        sims = self.doc_hist @ q_hist 
 
-        # compute query histogram
-        use_tfidf = codebook.idf is not None
-        q = codebook.compute_histogram(query_descriptors, use_tfidf=use_tfidf)
+        N = sims.shape[0]
+        if top_k >= N:
+            # Si pides más que N, solo ordena todo
+            top_idx = np.argsort(-sims)
+        else:
+            # argpartition para obtener top_k sin ordenar todo el arreglo
+            idx_part = np.argpartition(-sims, top_k - 1)[:top_k]
+            # Ordenar esos top_k por similitud descendente
+            top_idx = idx_part[np.argsort(-sims[idx_part])]
 
-        # sparsify top-N
-        top_idx = np.argsort(q)[-self.top_n_words:]
-        q_sparse = np.zeros_like(q)
-        q_sparse[top_idx] = q[top_idx]
-        q_sparse /= (np.linalg.norm(q_sparse) + 1e-12)
+        results: List[Tuple[float, str]] = []
+        for i in top_idx:
+            results.append((float(sims[i]), self.paths[int(i)]))
 
-        # accumulate score
-        scores = defaultdict(float)
-
-        for word in np.nonzero(q_sparse)[0]:
-            qw = q_sparse[word]
-            postings = self.inverted.get(word, [])
-
-            for doc_id, weight in postings:
-                scores[doc_id] += qw * weight  # cosine contribution
-
-        if not scores:
-            return []
-
-        # top-k heap
-        heap = []
-        for d, sc in scores.items():
-            if len(heap) < top_k:
-                heapq.heappush(heap, (sc, d))
-            else:
-                if sc > heap[0][0]:
-                    heapq.heapreplace(heap, (sc, d))
-
-        results = sorted(heap, key=lambda x: x[0], reverse=True)
-        return [(float(sim), self.doc_paths[doc_id]) for sim, doc_id in results]
+        return results
