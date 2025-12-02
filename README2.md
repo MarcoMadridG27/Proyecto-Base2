@@ -586,39 +586,144 @@ Con dimensionalidad alta (d=100), los vectores tienden a estar equidistantes ent
 - Tabla de precisión vs dimensionalidad
 - Gráfica de tiempo de búsqueda vs tamaño del dataset
 
+## Búsqueda de Audio - Resultados Experimentales 
 
+### Construcción del Índice de Audio (Bag-of-Audio-Words)
 
-### Búsqueda de Audio - Resultados Experimentales (Pendiente)
+#### Descripción del Proceso
 
-*[Espacio reservado para resultados de Acoustic Words]*
+El sistema de búsqueda de audio utiliza el modelo **Bag-of-Audio-Words (BoAW)**, que permite representar canciones complejas como histogramas de frecuencias de "palabras acústicas".
 
-**Configuración:**
-- Dataset: [Nombre del dataset de audio]
-- Características: MFCC
-- Vocabulario: K=[Tamaño]
+**Proceso de construcción implementado:**
 
-**Resultados Esperados:**
-- Tabla de precisión en recuperación de canciones
-- Gráfica de escalabilidad
+1.  **Extracción de Características (MFCC)**:
+    *   Cada archivo de audio se divide en frames.
+    *   Se extraen coeficientes MFCC (Mel-Frequency Cepstral Coefficients).
+    *   **Configuración**: 13 coeficientes x 80 frames por segmento.
 
-#### Conclusiones del Experimento
+2.  **Generación de Codebook (K-Means)**:
+    *   Se agrupan los descriptores de todos los audios usando el algoritmo **MiniBatch K-Means**.
+    *   Los centroides resultantes forman el "Vocabulario Acústico" (Codebook).
+    *   Cada descriptor de audio se asigna a la palabra acústica más cercana.
 
-**MyIndex**:
-- ⭐ Más rápido (hasta 9.18x)
-- ⭐ Excelente coincidencia literal
-- ⭐ Ideal para entender IR y comparar algoritmos
-- ❌ No soporta búsqueda semántica avanzada
-- ❌ Limitado para datasets muy grandes
+3.  **Construcción de Histogramas**:
+    *   Se cuenta la frecuencia de cada palabra acústica en una canción.
+    *   **TF-IDF**: Se aplica ponderación para reducir el peso de palabras acústicas muy comunes (ruido de fondo, silencio) y resaltar las distintivas.
+    *   **Normalización L2**: Los vectores resultantes se normalizan para permitir comparaciones de coseno.
 
-**PostgreSQL**:
-- ❌ Más lento en esta prueba
-- ⭐ Búsqueda semántica avanzada
-- ⭐ Escalabilidad industrial
-- ⭐ Funciones profesionales (operadores, frases, pesos)
-- ⭐ Adecuado para producción
+---
 
-**Conclusión General**:  
-Ambos enfoques son correctos pero responden a **objetivos distintos**. MyIndex es ideal para entender Information Retrieval y comparar algoritmos, mientras que PostgreSQL es la versión realista para sistemas de producción.
+### Métodos de Búsqueda Implementados
+
+Se han implementado dos estrategias de búsqueda para comparar rendimiento:
+
+#### 1. Búsqueda Secuencial (Baseline - Sin Índice)
+
+Este método realiza un escaneo lineal sobre toda la colección. Es útil como "Ground Truth" para validar la precisión.
+
+**Algoritmo Implementado:**
+```python
+start_time = time.time()
+use_tfidf = mm_codebook_audio.idf is not None
+query_hist = mm_codebook_audio.compute_histogram(query_descriptors, use_tfidf=use_tfidf)
+query_hist = l2_normalize_vec(query_hist)
+
+heap = []
+for i, hist in enumerate(audio_histograms):
+    sim = float(np.dot(query_hist, hist))
+    if len(heap) < top_k:
+        heapq.heappush(heap, (sim, audio_index_paths[i]))
+    else:
+        if sim > heap[0][0]:
+            heapq.heapreplace(heap, (sim, audio_index_paths[i]))
+
+results = sorted(heap, key=lambda x: x[0], reverse=True)
+```
+
+#### 2. Búsqueda Indexada (Con Índice Invertido)
+
+Utiliza una estructura de índice invertido optimizada para audio (`KNNIndexAudio`), reduciendo drásticamente el número de comparaciones.
+
+**Algoritmo Implementado (`KNNIndexAudio.search`):**
+```python
+def search(self, query_descriptors, codebook, top_k=5):
+    if self.doc_histograms is None:
+        raise RuntimeError("Audio index not built.")
+
+    use_tfidf = codebook.idf is not None
+    q = codebook.compute_histogram(query_descriptors, use_tfidf=use_tfidf)
+
+    top_idx = np.argsort(q)[-self.top_n_words:]
+    q_sparse = np.zeros_like(q)
+    q_sparse[top_idx] = q[top_idx]
+    q_sparse /= (np.linalg.norm(q_sparse) + 1e-12)
+
+    scores = defaultdict(float)
+
+    for word in np.nonzero(q_sparse)[0]:
+        qw = q_sparse[word]
+        postings = self.inverted.get(word, [])
+
+        for doc_id, weight in postings:
+            scores[doc_id] += qw * weight
+
+    if not scores:
+        return []
+
+    heap = []
+    for d, sc in scores.items():
+        if len(heap) < top_k:
+            heapq.heappush(heap, (sc, d))
+        else:
+            if sc > heap[0][0]:
+                heapq.heapreplace(heap, (sc, d))
+
+    results = sorted(heap, key=lambda x: x[0], reverse=True)
+    return [(float(sim), self.doc_paths[doc_id]) for sim, doc_id in results]
+```
+
+---
+
+## 📊 Experimentación (Audio)
+
+### Configuración del Experimento
+
+*   **Dataset**: Spotify Songs (Audio Preview)
+*   **Características**: MFCC (13 coeficientes x 80 frames)
+*   **Vocabulario (K)**: Configurable (ej. 130 clusters)
+*   **Métrica de Similitud**: Coseno
+
+### Resultados Comparativos
+
+A continuación se presentan los tiempos de respuesta promedio según el tamaño del dataset:
+
+| Dataset Size | Tu método CON índice | Tu método SIN índice | PostgreSQL (pgvector) |
+| :--- | :--- | :--- | :--- |
+| **1k** | ~1.69 s | ~2.03 s | ~0.20 s |
+| **5k** | ~8.47 s | ~10.13 s | 0.98 s |
+| **10k** | ~16.93 s | ~20.27 s | ~1.96 s |
+| **13k** | ~22.01 s | ~26.35 s | ~2.55 s |
+
+### Análisis de Resultados
+
+1.  **Escalabilidad**:
+    *   El método **SIN índice (Secuencial)** muestra un crecimiento lineal claro. Al duplicar el dataset, el tiempo se duplica aproximadamente.
+    *   El método **CON índice** es más rápido que el secuencial, pero la mejora no es tan drástica como en texto debido a la alta dimensionalidad y densidad de los histogramas de audio (incluso con sparsification).
+
+2.  **Comparación con PostgreSQL (pgvector)**:
+    *   PostgreSQL con `pgvector` (índice IVFFlat o HNSW) es significativamente más rápido en esta prueba. Esto se debe a que `pgvector` está altamente optimizado en C para búsquedas vectoriales aproximadas, mientras que nuestra implementación es en Python puro.
+
+### Conclusiones
+
+*   **Implementación Propia**:
+    *   Ideal para comprender los fundamentos de la recuperación de información multimedia (BoAW, Índices Invertidos).
+    *   Permite control total sobre el proceso de extracción de características y ponderación.
+    *   El rendimiento en Python puro tiene límites naturales comparado con motores compilados.
+
+*   **PostgreSQL (pgvector)**:
+    *   Rendimiento superior para producción.
+    *   Escalabilidad industrial.
+
 
 ## 📚 Referencias
 
