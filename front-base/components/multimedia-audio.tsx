@@ -35,6 +35,7 @@ function MultimediaSearch({
   const [fileType, setFileType] = useState<"image" | "audio" | null>(null)
   const [topK, setTopK] = useState(5)
   const [searchIndexName, setSearchIndexName] = useState("default")
+  const [searchMethod, setSearchMethod] = useState<"sequential" | "index">("sequential") // New state for search method
 
   // Build Index State
   const [zipFile, setZipFile] = useState<File | null>(null)
@@ -155,12 +156,9 @@ function MultimediaSearch({
       formData.append("file", uploadedFile)
       formData.append("top_k", topK.toString())
       formData.append("index_name", searchIndexName)
+      formData.append("method", searchMethod) // Add the selected search method
 
-      // choose endpoint depending on file type
-      const endpoint =
-        fileType === "audio"
-          ? "http://localhost:8000/multimedia/audio/search"
-          : "http://localhost:8000/multimedia/search"
+      const endpoint = "http://localhost:8000/multimedia/audio/search"
       const response = await fetch(endpoint, {
         method: "POST",
         body: formData,
@@ -171,7 +169,7 @@ function MultimediaSearch({
       if (data.ok) {
         setResults(data.results || [])
         setMetrics({
-          execution_time: data.search_time_seconds * 1000,
+          execution_time: data.search_time_seconds * 1000, // Convert seconds to milliseconds
           total_similar: data.results?.length || 0,
         })
         toast.success(`Found ${data.results?.length || 0} similar objects`)
@@ -274,6 +272,34 @@ function MultimediaSearch({
         </p>
       </div>
 
+      {/* Metrics */}
+      {metrics && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card className="glass-card border-white/10 bg-gradient-to-br from-primary/10 to-transparent">
+            <CardContent className="pt-6 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Execution Time</p>
+                <p className="text-2xl font-bold text-primary">
+                  {metrics.execution_time.toFixed(2)} ms
+                </p>
+              </div>
+              <Clock className="h-8 w-8 text-primary/50" />
+            </CardContent>
+          </Card>
+          <Card className="glass-card border-white/10 bg-gradient-to-br from-secondary/10 to-transparent">
+            <CardContent className="pt-6 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Total Found</p>
+                <p className="text-2xl font-bold text-secondary">
+                  {metrics.total_similar}
+                </p>
+              </div>
+              <BarChart3 className="h-8 w-8 text-secondary/50" />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <Tabs defaultValue={effectiveInitialTab} className="w-full">
         <TabsList className="grid w-full grid-cols-2 max-w-[400px] mb-8">
           <TabsTrigger value="search">Search</TabsTrigger>
@@ -290,7 +316,7 @@ function MultimediaSearch({
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Upload className="h-5 w-5 text-primary" />
-                    {focus === "audio" ? "Query Audio (30s max)" : "Query Media (Image or Audio)"}
+                    Query Audio (30s max)
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -353,6 +379,18 @@ function MultimediaSearch({
                       min={1}
                       className="bg-white/5 border-white/10"
                     />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Search Method</label>
+                    <select
+                      value={searchMethod}
+                      onChange={(e) => setSearchMethod(e.target.value as "sequential" | "index")}
+                      className="bg-white/5 border-white/10 rounded px-2 py-2 w-full"
+                    >
+                      <option value="sequential">KNN Sequential</option>
+                      <option value="index">KNN with Inverted Index</option>
+                    </select>
                   </div>
 
                   <Button
